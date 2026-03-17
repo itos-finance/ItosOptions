@@ -2,7 +2,6 @@
 // Change Date: 2030-03-17  (license converts to GPL-2.0-or-later on this date)
 pragma solidity ^0.8.34;
 
-import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {
     SafeERC20
