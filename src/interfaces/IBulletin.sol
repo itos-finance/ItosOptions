@@ -1,0 +1,93 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.34;
+
+/// @title IBulletin
+/// @notice On-chain order book where MMs post signed bids/offers for OPairs.
+///         Each address may hold at most one bid and one offer per vault.
+///
+/// @dev The stored signatures can be used directly with OPair.sell / OPair.buy.
+///      Signatures are in pricePerOption terms. Fillers compute total = pricePerOption * size / 1e18.
+interface IBulletin {
+    // --- Structs ---
+
+    struct Order {
+        address funder;          // Funder or MultiFunder contract holding the funds
+        address signer;          // Authorised signer on the funder whose quote is stored
+        uint128 pricePerOption;  // Price per risk-token unit in cash/deposit token
+        uint128 size;            // Notional size in risk-token units
+        uint256 validTillTimestamp;
+        uint256 nonce;           // Funder nonce this signature was made for
+        bytes   signature;
+    }
+
+    // --- Errors ---
+    error VaultNotFromFactory();
+    error NoOrderToCancel();
+
+    // --- Events ---
+    /// @param vault   The OPair this order is for.
+    /// @param signer  The address whose signature was verified.
+    /// @param order   The stored order details.
+    event BidPosted(address indexed vault, address indexed signer, Order order);
+    event OfferPosted(address indexed vault, address indexed signer, Order order);
+    event BidCancelled(address indexed vault, address indexed poster);
+    event OfferCancelled(address indexed vault, address indexed poster);
+
+    // --- Functions ---
+
+    /// @notice Post a bid (willingness to buy) for a vault on behalf of `signer`.
+    ///         Reverts if the signature does not recover to `signer`.
+    ///         Replaces any existing bid from `signer` for the same vault.
+    /// @param vault              The OPair to bid on.
+    /// @param signer             Address whose EIP-712 signature is provided.
+    /// @param funder             Funder/MultiFunder holding the premium funds.
+    /// @param pricePerOption     Price per risk-token unit in cashToken (18-decimal fixed point).
+    /// @param size               Notional size in risk-token units.
+    /// @param validTillTimestamp Quote expiry.
+    /// @param nonce              Funder nonce this signature was made for.
+    /// @param signature          EIP-712 signature over the quote.
+    function postBid(
+        address vault,
+        address signer,
+        address funder,
+        uint128 pricePerOption,
+        uint128 size,
+        uint256 validTillTimestamp,
+        uint256 nonce,
+        bytes calldata signature
+    ) external;
+
+    /// @notice Post an offer (willingness to sell/write) for a vault on behalf of `signer`.
+    ///         Reverts if the signature does not recover to `signer`.
+    ///         Replaces any existing offer from `signer` for the same vault.
+    /// @param vault              The OPair to offer on.
+    /// @param signer             Address whose EIP-712 signature is provided.
+    /// @param funder             Funder/MultiFunder holding the collateral funds.
+    /// @param pricePerOption     Price per risk-token unit in cashToken (18-decimal fixed point).
+    /// @param size               Notional size in risk-token units.
+    /// @param validTillTimestamp Quote expiry.
+    /// @param nonce              Funder nonce this signature was made for.
+    /// @param signature          EIP-712 signature over the quote.
+    function postOffer(
+        address vault,
+        address signer,
+        address funder,
+        uint128 pricePerOption,
+        uint128 size,
+        uint256 validTillTimestamp,
+        uint256 nonce,
+        bytes calldata signature
+    ) external;
+
+    /// @notice Cancel the caller's bid for a vault.
+    function cancelBid(address vault) external;
+
+    /// @notice Cancel the caller's offer for a vault.
+    function cancelOffer(address vault) external;
+
+    /// @notice Returns the active bid posted by `poster` for `vault`, or a zeroed struct if none.
+    function getBid(address vault, address poster) external view returns (Order memory);
+
+    /// @notice Returns the active offer posted by `poster` for `vault`, or a zeroed struct if none.
+    function getOffer(address vault, address poster) external view returns (Order memory);
+}
