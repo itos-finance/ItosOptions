@@ -8,11 +8,10 @@ import {
     SafeERC20
 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
-import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {
     ReentrancyGuardTransient
 } from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
-import {Funder} from "./Funder.sol";
+
 import {IFunderBase} from "./interfaces/IFunderBase.sol";
 import {IExerciseCallback} from "./interfaces/IExerciseCallback.sol";
 
@@ -255,7 +254,7 @@ contract OPair is ReentrancyGuardTransient {
 
         // Pull premium from buyer's Funder.
         uint256 cashBefore = cashToken.balanceOf(address(this));
-        Funder(funderAddr).requestFunds(
+        IFunderBase(funderAddr).requestFunds(
             buyerSigner,
             address(cashToken),
             premium,
@@ -309,7 +308,7 @@ contract OPair is ReentrancyGuardTransient {
         uint256 physicalSize = _addShort(sellerSigner, size);
         uint256 acquireAmt = _depositAmount(physicalSize); // 0 when fully netted
         uint256 depositBefore = depositToken.balanceOf(address(this));
-        Funder(sellerFunderAddr).requestFunds(
+        IFunderBase(sellerFunderAddr).requestFunds(
             sellerSigner,
             address(depositToken),
             premium, // seller signed a price; pricePerOption = premium * 1e18 / size

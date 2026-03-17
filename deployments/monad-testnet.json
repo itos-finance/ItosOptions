@@ -1,0 +1,27 @@
+{
+  "chain_id": 10143,
+  "deployed_at": "2026-03-17T19:20:53Z",
+  "contracts": {
+    "weth": "0x216Bd32AF85C2a3628e1E42b4f3F21834bB5FfA6",
+    "usdc": "0x9fAf34ddCF9D26b6e5f12482C2942c28f207B7B7",
+    "factory": "0xEd98c66915a62fD0Bf4a3488246C983F2fDcE0fc",
+    "funder": "0x24d394d7b3BB8ef8f95A6c2363B6fc7Cb2b3CBC3",
+    "multiFunder": "0x2AF1E13227000902cDf1653f640C499e309aa4A9",
+    "bulletin": "0x667d01745c6Db0a3FCE8664b7c02CD6bFc671AF1",
+    "pair_weth_usdc_call": "0xd6Cc7C5E657C43C0a9D8B60327452dB35a3DA2D6"
+  },
+  "maker_funders": {
+    "maker_0": {
+      "address": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+      "funder": "0x0a853D1e6bd978d130f45fDBa491c6470567Da1D"
+    },
+    "maker_1": {
+      "address": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
+      "funder": "0x54e3cE3f01C6934A0d74C42c08EFBCb181694FD7"
+    },
+    "maker_2": {
+      "address": "0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65",
+      "funder": "0x983FAA38d0800C0ddf23348add77BdA3851D2F14"
+    }
+  }
+}
