@@ -9,6 +9,9 @@ import {
 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
+import {
+    ReentrancyGuardTransient
+} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import {Funder} from "./Funder.sol";
 import {IFunderBase} from "./interfaces/IFunderBase.sol";
 import {IExerciseCallback} from "./interfaces/IExerciseCallback.sol";
@@ -28,11 +31,7 @@ contract OToken is ERC20 {
         pair = OPair(msg.sender);
     }
 
-    function _update(
-        address from,
-        address to,
-        uint256 value
-    ) internal override {
+    function _update(address, address, uint256) internal pure override {
         revert NonTransferable();
     }
 }
@@ -76,7 +75,7 @@ contract OShortToken is OToken {
 // opposing position is netted first before any new collateral is required.
 // ─────────────────────────────────────────────────────────────────────────────
 
-contract OPair {
+contract OPair is ReentrancyGuardTransient {
     using SafeERC20 for IERC20;
 
     // -------------------------------------------------------------------------
@@ -233,7 +232,7 @@ contract OPair {
         uint128 premium,
         uint256 validTillTimestamp,
         bytes calldata signature
-    ) external beforeExpiry {
+    ) external beforeExpiry nonReentrant {
         if (validTillTimestamp < block.timestamp) revert QuoteExpired();
         if (size == 0) revert ZeroSize();
         if (size < minDepositSize) revert BelowMinDeposit();
@@ -261,7 +260,7 @@ contract OPair {
             address(cashToken),
             premium,
             size,
-            premium,        // acquireAmount == amount: premium is always paid in full
+            premium, // acquireAmount == amount: premium is always paid in full
             validTillTimestamp,
             signature
         );
@@ -296,7 +295,7 @@ contract OPair {
         uint128 premium,
         uint256 validTillTimestamp,
         bytes calldata signature
-    ) external beforeExpiry {
+    ) external beforeExpiry nonReentrant {
         if (validTillTimestamp < block.timestamp) revert QuoteExpired();
         if (size == 0) revert ZeroSize();
         if (size < minDepositSize) revert BelowMinDeposit();
@@ -313,7 +312,7 @@ contract OPair {
         Funder(sellerFunderAddr).requestFunds(
             sellerSigner,
             address(depositToken),
-            premium,    // seller signed a price; pricePerOption = premium * 1e18 / size
+            premium, // seller signed a price; pricePerOption = premium * 1e18 / size
             size,
             acquireAmt, // actual collateral transfer (0 when fully netted)
             validTillTimestamp,
@@ -355,7 +354,7 @@ contract OPair {
         uint128 size,
         address callbackContract,
         bytes calldata data
-    ) external beforeExpiry {
+    ) external beforeExpiry nonReentrant {
         if (size == 0) revert ZeroSize();
         if (netPosition[msg.sender] < int256(uint256(size)))
             revert InsufficientLongPosition();
@@ -366,9 +365,9 @@ contract OPair {
         uint256 depositAmt = size;
         uint256 swapAmt = size;
         if (isCall) {
-            swapAmt = _cashAmount(size);
+            swapAmt = _cashAmount(size, true);
         } else {
-            depositAmt = _cashAmount(size);
+            depositAmt = _cashAmount(size, false);
         }
 
         depositToken.safeTransfer(callbackContract, depositAmt);
@@ -420,14 +419,15 @@ contract OPair {
         totalSold -= size;
 
         if (isCall) {
-            fromExercised = _cashAmount(fromExercised);
+            fromExercised = _cashAmount(fromExercised, false);
         } else {
-            fromUnexercised = _cashAmount(fromUnexercised);
+            fromUnexercised = _cashAmount(fromUnexercised, false);
         }
 
         if (fromUnexercised > 0)
             depositToken.safeTransfer(msg.sender, fromUnexercised);
-        if (fromExercised > 0) swapToken.safeTransfer(msg.sender, fromExercised);
+        if (fromExercised > 0)
+            swapToken.safeTransfer(msg.sender, fromExercised);
 
         emit Claimed(msg.sender, fromUnexercised, fromExercised);
     }
@@ -445,9 +445,9 @@ contract OPair {
         settledSwapToken[msg.sender] = 0;
 
         if (isCall) {
-            swapAmt = _cashAmount(swapAmt);
+            swapAmt = _cashAmount(swapAmt, false);
         } else {
-            depAmt = _cashAmount(swapAmt);
+            depAmt = _cashAmount(depAmt, false);
         }
         if (depAmt > 0) depositToken.safeTransfer(msg.sender, depAmt);
         if (swapAmt > 0) swapToken.safeTransfer(msg.sender, swapAmt);
@@ -536,11 +536,20 @@ contract OPair {
         emit Netted(account, fromUnexercised, fromExercised);
     }
 
-    function _cashAmount(uint256 riskSize) internal view returns (uint256) {
-        return (riskSize * strike) / 1e18;
+    function _cashAmount(
+        uint256 riskSize,
+        bool roundUp
+    ) internal view returns (uint256 amt) {
+        uint256 s = strike;
+        uint256 d = 1e18;
+        assembly ("memory-safe") {
+            let m := mul(riskSize, s)
+            amt := add(div(m, d), and(roundUp, gt(mod(m, d), 0)))
+        }
     }
 
     function _depositAmount(uint256 riskSize) internal view returns (uint256) {
-        return isCall ? riskSize : _cashAmount(riskSize);
+        // Always round up on deposit.
+        return isCall ? riskSize : _cashAmount(riskSize, true);
     }
 }
