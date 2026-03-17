@@ -21,17 +21,45 @@ import {IExerciseCallback} from "./interfaces/IExerciseCallback.sol";
 // Balances mirror the authoritative netPosition mapping in OPair.
 // ─────────────────────────────────────────────────────────────────────────────
 
-contract OToken is ERC20 {
+abstract contract OToken is IERC20 {
     OPair public immutable pair;
+
+    string public name;
+    string public symbol;
+    uint8 public constant decimals = 18;
 
     error OnlyPair();
     error NonTransferable();
 
-    constructor(string memory id, string memory sym) ERC20(id, sym) {
+    constructor(string memory id, string memory sym) {
         pair = OPair(msg.sender);
+        name = id;
+        symbol = sym;
     }
 
-    function _update(address, address, uint256) internal pure override {
+    /// @inheritdoc IERC20
+    function totalSupply() public view returns (uint256) {
+        return pair.totalSold();
+    }
+
+    function transfer(address, uint256) public pure returns (bool) {
+        revert NonTransferable();
+    }
+
+    /// @inheritdoc IERC20
+    function allowance(address, address) public pure returns (uint256) {
+        revert NonTransferable();
+    }
+
+    function approve(address, uint256) public pure returns (bool) {
+        revert NonTransferable();
+    }
+
+    function transferFrom(
+        address,
+        address,
+        uint256
+    ) public pure returns (bool) {
         revert NonTransferable();
     }
 }
