@@ -9,14 +9,14 @@
 #   e.g. WETH/USDC → 18 + 6 - 18 = 6, so strikeUSD * 1_000_000
 #
 # Key format in deployment JSON:
-#   pair_{underlying_lower}_{cash_lower}_{call|put}_{strikeUsd}
-#   e.g. pair_weth_usdc_call_2000
+#   pair_{underlying_lower}_{cash_lower}_{call|put}_{strikeUsd}_{YYYYMMDD}
+#   e.g. pair_weth_usdc_call_2000_20260331
 #
 # Usage:
 #   cd contracts && bash script/deploy-pairs.sh [config-file] [deployment-json]
 #
 # Defaults:
-#   config-file     config/weth-usdc-pairs.json
+#   config-file     (required — e.g. config/weth-usdc-20260331-pairs.json)
 #   deployment-json contracts/deployments/monad-testnet.json
 #
 # Prerequisites:
@@ -32,13 +32,13 @@ cd "$CONTRACTS_DIR"
 
 # ── Args ───────────────────────────────────────────────────────────────────────
 
-CONFIG_FILE="${1:-config/weth-usdc-pairs.json}"
+CONFIG_FILE="${1:?Usage: deploy-pairs.sh <config-file> [deployment-json]}"
 # Also accept paths relative to the repo root (one level up)
 if [ ! -f "$CONFIG_FILE" ]; then
-  CONFIG_FILE="$CONTRACTS_DIR/../${1:-config/weth-usdc-pairs.json}"
+  CONFIG_FILE="$CONTRACTS_DIR/../$1"
 fi
 if [ ! -f "$CONFIG_FILE" ]; then
-  echo "Error: config file not found: ${1:-config/weth-usdc-pairs.json}" >&2
+  echo "Error: config file not found: $1" >&2
   exit 1
 fi
 CONFIG_FILE="$(cd "$(dirname "$CONFIG_FILE")" && pwd)/$(basename "$CONFIG_FILE")"
@@ -104,7 +104,7 @@ for i in $(seq 0 $(( PAIR_COUNT - 1 ))); do
   TYPE_STR="put"
   if [ "$IS_CALL" = "true" ]; then TYPE_STR="call"; fi
 
-  PAIR_KEY="pair_${UNDERLYING}_${CASH}_${TYPE_STR}_${STRIKE_USD}"
+  PAIR_KEY="pair_${UNDERLYING}_${CASH}_${TYPE_STR}_${STRIKE_USD}_${EXPIRY_DATE}"
 
   # ── Idempotency check ──────────────────────────────────────────────────────
   EXISTING=$(jq -r --arg k "$PAIR_KEY" '.contracts[$k] // ""' "$DEPLOY_JSON")
