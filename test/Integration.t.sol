@@ -171,7 +171,7 @@ contract IntegrationTest is Setup {
             usdc.mint(address(funder2), 300e6);
 
             uint256 validTill = block.timestamp + 1 hours;
-            bytes memory sig = _signQuote(address(funder2), address(pair), mm2Key, 3e18, 300e6, validTill, 0);
+            bytes memory sig = _signQuote(address(funder2), address(pair), mm2Key, int256(3e18), 300e6, validTill, 0);
             vm.prank(seller2);
             pair.sell(address(funder2), mm2, 3e18, 300e6, validTill, sig);
         }
@@ -234,7 +234,7 @@ contract IntegrationTest is Setup {
         weth.approve(address(pair), depositAmt);
 
         uint256 validTill = block.timestamp + 1 hours;
-        bytes memory sig = _signQuote(address(multiFunder), address(pair), mmPrivateKey, size, premium, validTill, 0);
+        bytes memory sig = _signQuote(address(multiFunder), address(pair), mmPrivateKey, int256(uint256(size)), premium, validTill, 0);
 
         vm.prank(seller);
         pair.sell(address(multiFunder), mm, size, premium, validTill, sig);
@@ -281,38 +281,38 @@ contract IntegrationTest is Setup {
         uint128 size    = 2e18;
         uint128 premium = 200e6; // total cashToken the buyer will pay
         uint256 validTill = block.timestamp + 2 hours;
-
-        // pricePerOption as stored on Bulletin = premium * 1e18 / size
-        uint128 pricePerOption = uint128((uint256(premium) * 1e18) / size);
+        int256 signedSize = int256(uint256(size)); // positive = buy intent
 
         // 1. MM signs the quote and posts it to the Bulletin.
         //    nonce=0 since funder.nonces(mm, pair)==0 at this point.
         uint256 nonce = funder.nonces(mm, address(pair));
-        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, size, premium, validTill, nonce);
+        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, signedSize, premium, validTill, nonce);
         usdc.mint(address(funder), premium); // ensure funder has funds
 
-        bulletin.postBid(address(pair), mm, address(funder), pricePerOption, size, validTill, nonce, sig);
+        bulletin.postBid(address(pair), mm, address(funder), premium, int128(signedSize), validTill, nonce, sig);
 
         // Verify the bid is stored on-chain.
         IBulletin.Order memory bid = bulletin.getBid(address(pair), mm);
         assertEq(bid.signer,         mm);
         assertEq(bid.funder,         address(funder));
-        assertEq(bid.pricePerOption, pricePerOption);
-        assertEq(bid.size,           size);
+        assertEq(bid.premium,        premium);
+        assertEq(bid.size,           int128(signedSize));
         assertEq(bid.nonce,          nonce);
 
         // 2. Seller reads the bid off the Bulletin and fills it via OPair.sell().
         //    The exact same `sig` bytes that were posted are passed through.
-        weth.mint(seller, size);
+        //    bid.size is positive (buy intent), safe to cast to uint128.
+        uint128 absSize = uint128(bid.size);
+        weth.mint(seller, absSize);
         vm.prank(seller);
-        weth.approve(address(pair), size);
+        weth.approve(address(pair), absSize);
 
         vm.prank(seller);
         pair.sell(
             bid.funder,
             bid.signer,
-            bid.size,
-            premium,                 // total = pricePerOption * size / 1e18
+            absSize,
+            premium,
             bid.validTillTimestamp,
             bid.signature            // ← the stored Bulletin signature
         );
@@ -344,28 +344,27 @@ contract IntegrationTest is Setup {
         uint128 size    = 1e18;
         uint128 premium = 80e6;   // buyer pays this directly; not part of the offer signature
         uint256 validTill = block.timestamp + 2 hours;
-
-        // The seller signs a quote committing to a premium price.
-        // pricePerOption = premium * 1e18 / size = 80e6.
-        uint128 pricePerOption = premium; // size == 1e18, so pricePerOption == premium
+        int256 signedSize = -int256(uint256(size)); // negative = sell intent
 
         // 1. MM signs the offer quote and posts it to the Bulletin.
         uint256 nonce = funder.nonces(mm, address(pair));
-        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, size, premium, validTill, nonce);
+        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, signedSize, premium, validTill, nonce);
         weth.mint(address(funder), size); // funder must hold the collateral (1 WETH for a call)
 
-        bulletin.postOffer(address(pair), mm, address(funder), pricePerOption, size, validTill, nonce, sig);
+        bulletin.postOffer(address(pair), mm, address(funder), premium, int128(signedSize), validTill, nonce, sig);
 
         // Verify the offer is stored on-chain.
         IBulletin.Order memory offer = bulletin.getOffer(address(pair), mm);
         assertEq(offer.signer,         mm);
         assertEq(offer.funder,         address(funder));
-        assertEq(offer.pricePerOption, pricePerOption);
+        assertEq(offer.premium,        premium);
         assertEq(offer.nonce,          nonce);
 
         // 2. Buyer reads the offer and fills it via OPair.buy().
         //    Buyer pays `premium` directly; the stored sig authorises the funder
         //    to release the collateral.
+        //    offer.size is negative (sell intent), negate to get the absolute size.
+        uint128 absSize = uint128(-offer.size);
         usdc.mint(buyer, premium);
         vm.prank(buyer);
         usdc.approve(address(pair), premium);
@@ -374,7 +373,7 @@ contract IntegrationTest is Setup {
         pair.buy(
             offer.funder,
             offer.signer,
-            offer.size,
+            absSize,
             premium,                  // buyer pays this out-of-pocket
             offer.validTillTimestamp,
             offer.signature           // ← the stored Bulletin signature
@@ -414,26 +413,25 @@ contract IntegrationTest is Setup {
         uint128 size     = 1e18;
         uint128 premium0 = 100e6;
         uint128 premium1 = 120e6; // slightly different second order
-        uint128 ppo0 = uint128((uint256(premium0) * 1e18) / size);
-        uint128 ppo1 = uint128((uint256(premium1) * 1e18) / size);
+        int256 signedSize = int256(uint256(size)); // positive = buy intent
 
         // ── Pre-sign both orders (before any trade executes) ─────────────────
         assertEq(funder.nonces(mm, address(pair)), 0);
 
         bytes memory sig0 = _signQuote(
             address(funder), address(pair), mmPrivateKey,
-            size, premium0, validTill, 0   // nonce 0 — valid right now
+            signedSize, premium0, validTill, 0   // nonce 0 — valid right now
         );
         bytes memory sig1 = _signQuote(
             address(funder), address(pair), mmPrivateKey,
-            size, premium1, validTill, 1   // nonce 1 — valid only after bid0 fills
+            signedSize, premium1, validTill, 1   // nonce 1 — valid only after bid0 fills
         );
 
         // ── Fund the funder for both premiums ────────────────────────────────
         usdc.mint(address(funder), uint256(premium0) + premium1);
 
         // ── Post bid0 and let sellerA fill it ────────────────────────────────
-        bulletin.postBid(address(pair), mm, address(funder), ppo0, size, validTill, 0, sig0);
+        bulletin.postBid(address(pair), mm, address(funder), premium0, int128(signedSize), validTill, 0, sig0);
         assertEq(bulletin.getBid(address(pair), mm).nonce, 0);
 
         address sellerA = makeAddr("sellerA");
@@ -443,7 +441,7 @@ contract IntegrationTest is Setup {
 
         IBulletin.Order memory bid0 = bulletin.getBid(address(pair), mm);
         vm.prank(sellerA);
-        pair.sell(bid0.funder, bid0.signer, bid0.size, premium0, bid0.validTillTimestamp, bid0.signature);
+        pair.sell(bid0.funder, bid0.signer, uint128(bid0.size), premium0, bid0.validTillTimestamp, bid0.signature);
 
         assertEq(funder.nonces(mm, address(pair)), 1);          // nonce advanced
         assertEq(pair.netPosition(mm), int256(uint256(size)));   // mm is long 1 ETH
@@ -454,7 +452,7 @@ contract IntegrationTest is Setup {
         // integrity check is covered in Security tests.
 
         // ── Post bid1 (the pre-signed queued order) and let sellerB fill it ──
-        bulletin.postBid(address(pair), mm, address(funder), ppo1, size, validTill, 1, sig1);
+        bulletin.postBid(address(pair), mm, address(funder), premium1, int128(signedSize), validTill, 1, sig1);
         assertEq(bulletin.getBid(address(pair), mm).nonce, 1);
 
         address sellerB = makeAddr("sellerB");
@@ -464,7 +462,7 @@ contract IntegrationTest is Setup {
 
         IBulletin.Order memory bid1 = bulletin.getBid(address(pair), mm);
         vm.prank(sellerB);
-        pair.sell(bid1.funder, bid1.signer, bid1.size, premium1, bid1.validTillTimestamp, bid1.signature);
+        pair.sell(bid1.funder, bid1.signer, uint128(bid1.size), premium1, bid1.validTillTimestamp, bid1.signature);
 
         assertEq(funder.nonces(mm, address(pair)), 2);            // nonce advanced again
         assertEq(pair.netPosition(mm), int256(2 * uint256(size))); // mm is now long 2 ETH

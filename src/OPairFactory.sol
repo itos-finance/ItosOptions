@@ -20,7 +20,6 @@ contract OPairFactory is Ownable2Step {
 
     // Lookup: keccak256(riskToken, cashToken, strike, expiry, isCall) → pair address.
     mapping(bytes32 => address) public pairs;
-
     event PairCreated(
         address indexed pair,
         address indexed riskToken,

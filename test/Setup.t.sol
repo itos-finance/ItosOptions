@@ -90,15 +90,15 @@ abstract contract Setup is Test {
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
 
     bytes32 private constant _QUOTE_TYPEHASH =
-        keccak256("Quote(address funder,uint256 size,address vault,uint256 pricePerOption,uint256 validTillTimestamp,uint256 nonce)");
+        keccak256("Quote(address funder,int256 size,address vault,uint256 premium,uint256 validTillTimestamp,uint256 nonce)");
 
     /// @dev Build an EIP-712 digest matching FundingVerifier._buildDigest.
-    ///      pricePerOption = amount * 1e18 / size  (mirrors Funder.requestFunds).
+    ///      Positive size = buy intent, negative size = sell intent.
     function _buildDigest(
         address funderAddr,
         address vaultAddr,
-        uint256 size,
-        uint256 amount,
+        int256 size,
+        uint256 premium,
         uint256 validTill,
         uint256 nonce
     ) internal view returns (bytes32) {
@@ -109,13 +109,12 @@ abstract contract Setup is Test {
             block.chainid,
             funderAddr
         ));
-        uint256 pricePerOption = (amount * 1e18) / size;
         bytes32 structHash = keccak256(abi.encode(
             _QUOTE_TYPEHASH,
             funderAddr,
             size,
             vaultAddr,
-            pricePerOption,
+            premium,
             validTill,
             nonce
         ));
@@ -123,11 +122,12 @@ abstract contract Setup is Test {
     }
 
     /// @dev Sign a quote with an arbitrary private key.
+    ///      Positive size = buy intent, negative size = sell intent.
     function _signQuote(
         address funderAddr,
         address vaultAddr,
         uint256 signerKey,
-        uint256 size,
+        int256 size,
         uint256 amount,
         uint256 validTill,
         uint256 nonce
@@ -166,7 +166,8 @@ abstract contract Setup is Test {
 
         uint256 nonce = funder.nonces(mm, address(pair));
         uint256 validTill = block.timestamp + 1 hours;
-        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, size, premium, validTill, nonce);
+        // mm is buyer → positive size
+        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, int256(uint256(size)), premium, validTill, nonce);
 
         vm.prank(_seller);
         pair.sell(address(funder), mm, size, premium, validTill, sig);
@@ -193,7 +194,8 @@ abstract contract Setup is Test {
 
         uint256 nonce = funder.nonces(mm, address(pair));
         uint256 validTill = block.timestamp + 1 hours;
-        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, size, premium, validTill, nonce);
+        // mm is seller → negative size
+        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, -int256(uint256(size)), premium, validTill, nonce);
 
         vm.prank(_buyer);
         pair.buy(address(funder), mm, size, premium, validTill, sig);

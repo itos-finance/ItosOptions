@@ -33,11 +33,12 @@ abstract contract FundingVerifier {
     ///         deployments; Bulletin uses _buildDigest with the external funder address).
     bytes32 public immutable DOMAIN_SEPARATOR;
 
-    /// @dev Quote(address funder,uint256 size,address vault,uint256 pricePerOption,
+    /// @dev Quote(address funder,int256 size,address vault,uint256 premium,
     ///           uint256 validTillTimestamp,uint256 nonce)
+    ///      Positive size = buy intent, negative size = sell intent.
     bytes32 public constant QUOTE_TYPEHASH =
         keccak256(
-            "Quote(address funder,uint256 size,address vault,uint256 pricePerOption,uint256 validTillTimestamp,uint256 nonce)"
+            "Quote(address funder,int256 size,address vault,uint256 premium,uint256 validTillTimestamp,uint256 nonce)"
         );
 
     bytes32 private constant _DOMAIN_TYPEHASH =
@@ -66,8 +67,8 @@ abstract contract FundingVerifier {
     function _buildDigest(
         address funder,
         address vault,
-        uint256 size,
-        uint256 pricePerOption,
+        int256 size,
+        uint256 premium,
         uint256 validTillTimestamp,
         uint256 nonce
     ) internal view returns (bytes32) {
@@ -77,7 +78,7 @@ abstract contract FundingVerifier {
                 funder,
                 size,
                 vault,
-                pricePerOption,
+                premium,
                 validTillTimestamp,
                 nonce
             )
@@ -97,8 +98,8 @@ abstract contract FundingVerifier {
     function _recoverSigner(
         address funder,
         address vault,
-        uint256 size,
-        uint256 pricePerOption,
+        int256 size,
+        uint256 premium,
         uint256 validTillTimestamp,
         uint256 nonce,
         bytes calldata signature
@@ -109,7 +110,7 @@ abstract contract FundingVerifier {
                     funder,
                     vault,
                     size,
-                    pricePerOption,
+                    premium,
                     validTillTimestamp,
                     nonce
                 ),
@@ -122,8 +123,8 @@ abstract contract FundingVerifier {
     function _verifyQuote(
         address expectedSigner,
         uint256 currentNonce,
-        uint256 size,
-        uint256 pricePerOption,
+        int256 size,
+        uint256 premium,
         uint256 validTillTimestamp,
         bytes calldata signature
     ) internal view {
@@ -132,7 +133,7 @@ abstract contract FundingVerifier {
                 address(this),
                 msg.sender,
                 size,
-                pricePerOption,
+                premium,
                 validTillTimestamp,
                 currentNonce,
                 signature

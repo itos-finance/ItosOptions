@@ -31,20 +31,30 @@ contract Bulletin is IBulletin, FundingVerifier {
         address vault,
         address signer,
         address funder,
-        uint128 pricePerOption,
-        uint128 size,
+        uint128 premium,
+        int128 size,
         uint256 validTillTimestamp,
         uint256 nonce,
         bytes calldata signature
     ) external {
         if (!factory.isVault(vault)) revert VaultNotFromFactory();
-        if (signer != _recoverSigner(funder, vault, size, pricePerOption, validTillTimestamp, nonce, signature))
-            revert InvalidSignature();
+        if (
+            signer !=
+            _recoverSigner(
+                funder,
+                vault,
+                int256(size),
+                premium,
+                validTillTimestamp,
+                nonce,
+                signature
+            )
+        ) revert InvalidSignature();
 
         _bids[vault][signer] = Order({
             funder: funder,
             signer: signer,
-            pricePerOption: pricePerOption,
+            premium: premium,
             size: size,
             validTillTimestamp: validTillTimestamp,
             nonce: nonce,
@@ -59,20 +69,30 @@ contract Bulletin is IBulletin, FundingVerifier {
         address vault,
         address signer,
         address funder,
-        uint128 pricePerOption,
-        uint128 size,
+        uint128 premium,
+        int128 size,
         uint256 validTillTimestamp,
         uint256 nonce,
         bytes calldata signature
     ) external {
         if (!factory.isVault(vault)) revert VaultNotFromFactory();
-        if (signer != _recoverSigner(funder, vault, size, pricePerOption, validTillTimestamp, nonce, signature))
-            revert InvalidSignature();
+        if (
+            signer !=
+            _recoverSigner(
+                funder,
+                vault,
+                int256(size),
+                premium,
+                validTillTimestamp,
+                nonce,
+                signature
+            )
+        ) revert InvalidSignature();
 
         _offers[vault][signer] = Order({
             funder: funder,
             signer: signer,
-            pricePerOption: pricePerOption,
+            premium: premium,
             size: size,
             validTillTimestamp: validTillTimestamp,
             nonce: nonce,
@@ -82,32 +102,23 @@ contract Bulletin is IBulletin, FundingVerifier {
         emit OfferPosted(vault, signer, _offers[vault][signer]);
     }
 
-    /// @inheritdoc IBulletin
-    function cancelBid(address vault) external {
-        if (_bids[vault][msg.sender].size == 0) revert NoOrderToCancel();
-        delete _bids[vault][msg.sender];
-        emit BidCancelled(vault, msg.sender);
-    }
-
-    /// @inheritdoc IBulletin
-    function cancelOffer(address vault) external {
-        if (_offers[vault][msg.sender].size == 0) revert NoOrderToCancel();
-        delete _offers[vault][msg.sender];
-        emit OfferCancelled(vault, msg.sender);
-    }
-
     // ------------------------------------------------------------------ //
     //  Views
     // ------------------------------------------------------------------ //
 
     /// @inheritdoc IBulletin
-    function getBid(address vault, address poster) external view returns (Order memory) {
+    function getBid(
+        address vault,
+        address poster
+    ) external view returns (Order memory) {
         return _bids[vault][poster];
     }
 
     /// @inheritdoc IBulletin
-    function getOffer(address vault, address poster) external view returns (Order memory) {
+    function getOffer(
+        address vault,
+        address poster
+    ) external view returns (Order memory) {
         return _offers[vault][poster];
     }
-
 }

@@ -133,13 +133,14 @@ contract FunderTest is Setup {
         uint128 size = 1e18;
         uint128 premium = 100e6;
         uint256 validTill = block.timestamp + 1 hours;
+        int256 signedSize = int256(uint256(size)); // buy intent
 
         usdc.mint(address(funder), premium);
         uint256 nonce = funder.nonces(mm, address(pair));
-        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, size, premium, validTill, nonce);
+        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, signedSize, premium, validTill, nonce);
 
         vm.prank(address(pair));
-        funder.requestFunds(mm, address(usdc), premium, size, premium, validTill, sig);
+        funder.requestFunds(mm, address(usdc), premium, signedSize, premium, validTill, sig);
 
         assertEq(usdc.balanceOf(address(pair)), premium);
     }
@@ -154,13 +155,14 @@ contract FunderTest is Setup {
         uint128 size = 1e18;
         uint128 premium = 50e6;
         uint256 validTill = block.timestamp + 1 hours;
+        int256 signedSize = int256(uint256(size));
         usdc.mint(address(funder), premium);
 
         uint256 nonce = funder.nonces(signer, address(pair));
-        bytes memory sig = _signQuote(address(funder), address(pair), signerKey, size, premium, validTill, nonce);
+        bytes memory sig = _signQuote(address(funder), address(pair), signerKey, signedSize, premium, validTill, nonce);
 
         vm.prank(address(pair));
-        funder.requestFunds(signer, address(usdc), premium, size, premium, validTill, sig);
+        funder.requestFunds(signer, address(usdc), premium, signedSize, premium, validTill, sig);
 
         assertEq(usdc.balanceOf(address(pair)), premium);
     }
@@ -169,22 +171,23 @@ contract FunderTest is Setup {
         uint128 size = 1e18;
         uint128 premium = 50e6;
         uint256 validTill = block.timestamp + 1 hours;
+        int256 signedSize = int256(uint256(size));
 
         usdc.mint(address(funder), premium * 2);
 
         // First request — nonce 0
         uint256 nonce0 = funder.nonces(mm, address(pair));
         assertEq(nonce0, 0);
-        bytes memory sig1 = _signQuote(address(funder), address(pair), mmPrivateKey, size, premium, validTill, nonce0);
+        bytes memory sig1 = _signQuote(address(funder), address(pair), mmPrivateKey, signedSize, premium, validTill, nonce0);
         vm.prank(address(pair));
-        funder.requestFunds(mm, address(usdc), premium, size, premium, validTill, sig1);
+        funder.requestFunds(mm, address(usdc), premium, signedSize, premium, validTill, sig1);
         assertEq(funder.nonces(mm, address(pair)), 1);
 
         // Second request — nonce 1
         uint256 nonce1 = funder.nonces(mm, address(pair));
-        bytes memory sig2 = _signQuote(address(funder), address(pair), mmPrivateKey, size, premium, validTill, nonce1);
+        bytes memory sig2 = _signQuote(address(funder), address(pair), mmPrivateKey, signedSize, premium, validTill, nonce1);
         vm.prank(address(pair));
-        funder.requestFunds(mm, address(usdc), premium, size, premium, validTill, sig2);
+        funder.requestFunds(mm, address(usdc), premium, signedSize, premium, validTill, sig2);
         assertEq(funder.nonces(mm, address(pair)), 2);
     }
 
@@ -203,20 +206,21 @@ contract FunderTest is Setup {
         uint128 size = 1e18;
         uint128 premium = 50e6;
         uint256 validTill = block.timestamp + 1 hours;
+        int256 signedSize = int256(uint256(size));
         usdc.mint(address(funder), premium * 2);
 
         // Use nonce 0 for pair
-        bytes memory sig1 = _signQuote(address(funder), address(pair), mmPrivateKey, size, premium, validTill, 0);
+        bytes memory sig1 = _signQuote(address(funder), address(pair), mmPrivateKey, signedSize, premium, validTill, 0);
         vm.prank(address(pair));
-        funder.requestFunds(mm, address(usdc), premium, size, premium, validTill, sig1);
+        funder.requestFunds(mm, address(usdc), premium, signedSize, premium, validTill, sig1);
         assertEq(funder.nonces(mm, address(pair)), 1);
         // pair2's nonce is still 0
         assertEq(funder.nonces(mm, address(pair2)), 0);
 
         // Use nonce 0 for pair2
-        bytes memory sig2 = _signQuote(address(funder), address(pair2), mmPrivateKey, size, premium, validTill, 0);
+        bytes memory sig2 = _signQuote(address(funder), address(pair2), mmPrivateKey, signedSize, premium, validTill, 0);
         vm.prank(address(pair2));
-        funder.requestFunds(mm, address(usdc), premium, size, premium, validTill, sig2);
+        funder.requestFunds(mm, address(usdc), premium, signedSize, premium, validTill, sig2);
         assertEq(funder.nonces(mm, address(pair2)), 1);
     }
 
@@ -224,69 +228,74 @@ contract FunderTest is Setup {
         uint128 size = 1e18;
         uint128 premium = 100e6;
         uint256 validTill = block.timestamp + 1 hours;
+        int256 signedSize = int256(uint256(size));
         usdc.mint(address(funder), premium);
 
-        bytes memory sig = _signQuote(address(funder), address(0xdead), mmPrivateKey, size, premium, validTill, 0);
+        bytes memory sig = _signQuote(address(funder), address(0xdead), mmPrivateKey, signedSize, premium, validTill, 0);
 
         vm.prank(address(0xdead)); // not a registered pair
         vm.expectRevert(FundingVerifier.NotValidVault.selector);
-        funder.requestFunds(mm, address(usdc), premium, size, premium, validTill, sig);
+        funder.requestFunds(mm, address(usdc), premium, signedSize, premium, validTill, sig);
     }
 
     function test_requestFunds_revertsNotAuthorizedSigner() public {
         uint128 size = 1e18;
         uint128 premium = 100e6;
         uint256 validTill = block.timestamp + 1 hours;
+        int256 signedSize = int256(uint256(size));
         usdc.mint(address(funder), premium);
 
         // Sign as `seller` who is neither owner nor authorized
         uint256 sellerKey = 0xBEEF;
         address sellerAddr = vm.addr(sellerKey);
-        bytes memory sig = _signQuote(address(funder), address(pair), sellerKey, size, premium, validTill, 0);
+        bytes memory sig = _signQuote(address(funder), address(pair), sellerKey, signedSize, premium, validTill, 0);
 
         vm.prank(address(pair));
         vm.expectRevert(IFunder.NotAuthorizedSigner.selector);
-        funder.requestFunds(sellerAddr, address(usdc), premium, size, premium, validTill, sig);
+        funder.requestFunds(sellerAddr, address(usdc), premium, signedSize, premium, validTill, sig);
     }
 
     function test_requestFunds_revertsInvalidSignature() public {
         uint128 size = 1e18;
         uint128 premium = 100e6;
         uint256 validTill = block.timestamp + 1 hours;
+        int256 signedSize = int256(uint256(size));
         usdc.mint(address(funder), premium);
 
         // Sign with wrong key
-        bytes memory sig = _signQuote(address(funder), address(pair), 0xDEAD, size, premium, validTill, 0);
+        bytes memory sig = _signQuote(address(funder), address(pair), 0xDEAD, signedSize, premium, validTill, 0);
 
         vm.prank(address(pair));
         vm.expectRevert(FundingVerifier.InvalidSignature.selector);
-        funder.requestFunds(mm, address(usdc), premium, size, premium, validTill, sig);
+        funder.requestFunds(mm, address(usdc), premium, signedSize, premium, validTill, sig);
     }
 
     function test_requestFunds_revertsStaleNonce() public {
         uint128 size = 1e18;
         uint128 premium = 50e6;
         uint256 validTill = block.timestamp + 1 hours;
+        int256 signedSize = int256(uint256(size));
         usdc.mint(address(funder), premium * 2);
 
         // Consume nonce 0
-        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, size, premium, validTill, 0);
+        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, signedSize, premium, validTill, 0);
         vm.prank(address(pair));
-        funder.requestFunds(mm, address(usdc), premium, size, premium, validTill, sig);
+        funder.requestFunds(mm, address(usdc), premium, signedSize, premium, validTill, sig);
 
         // Try to replay nonce 0 — sig is now invalid for nonce 1
         vm.prank(address(pair));
         vm.expectRevert(FundingVerifier.InvalidSignature.selector);
-        funder.requestFunds(mm, address(usdc), premium, size, premium, validTill, sig);
+        funder.requestFunds(mm, address(usdc), premium, signedSize, premium, validTill, sig);
     }
 
     function test_requestFunds_revertsExpiredQuote() public {
         uint128 size = 1e18;
         uint128 premium = 100e6;
         uint256 pastTime = block.timestamp - 1;
+        int256 signedSize = int256(uint256(size));
         usdc.mint(address(funder), premium);
 
-        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, size, premium, pastTime, 0);
+        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, signedSize, premium, pastTime, 0);
 
         vm.prank(address(pair));
         // OPair checks timestamp before calling requestFunds, but Funder also trusts the
@@ -294,26 +303,27 @@ contract FunderTest is Setup {
         // does NOT revert in Funder — expiry is enforced by OPair. This test verifies
         // that OPair rejects expired quotes before hitting requestFunds.
         vm.expectRevert(FundingVerifier.InvalidSignature.selector); // sig was made for pastTime
-        funder.requestFunds(mm, address(usdc), premium, size, premium, block.timestamp + 1, sig);
+        funder.requestFunds(mm, address(usdc), premium, signedSize, premium, block.timestamp + 1, sig);
     }
 
     function test_requestFunds_revertsInvalidSigLength() public {
         vm.prank(address(pair));
         vm.expectRevert(abi.encodeWithSelector(ECDSA.ECDSAInvalidSignatureLength.selector, 2));
-        funder.requestFunds(mm, address(usdc), 100e6, 1e18, 100e6, block.timestamp + 1 hours, hex"0011");
+        funder.requestFunds(mm, address(usdc), 100e6, int256(1e18), 100e6, block.timestamp + 1 hours, hex"0011");
     }
 
     function test_requestFunds_emitsEvent() public {
         uint128 size = 1e18;
         uint128 premium = 100e6;
         uint256 validTill = block.timestamp + 1 hours;
+        int256 signedSize = int256(uint256(size));
         usdc.mint(address(funder), premium);
 
-        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, size, premium, validTill, 0);
+        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, signedSize, premium, validTill, 0);
 
         vm.prank(address(pair));
         vm.expectEmit(true, true, true, true);
         emit IFunderBase.FundsRequested(address(pair), mm, address(usdc), premium);
-        funder.requestFunds(mm, address(usdc), premium, size, premium, validTill, sig);
+        funder.requestFunds(mm, address(usdc), premium, signedSize, premium, validTill, sig);
     }
 }

@@ -15,8 +15,7 @@ import {IFunderBase} from "./interfaces/IFunderBase.sol";
 ///         whitelist additional signers (e.g. trading bots) that can authorise transfers
 ///         on their behalf. Each signer has an independent nonce per vault.
 ///
-/// @dev Signatures commit to pricePerOption (not total). The vault passes the total amount;
-///      requestFunds derives pricePerOption = totalAmount * 1e18 / size for verification.
+/// @dev Signatures commit to the total premium. Each signer has an independent nonce per vault.
 contract Funder is IFunder, FundingVerifier {
     using SafeERC20 for IERC20;
 
@@ -67,6 +66,16 @@ contract Funder is IFunder, FundingVerifier {
         emit FundsWithdrawn(token, amount);
     }
 
+    // --- Nonce management ---
+
+    /// @inheritdoc IFunderBase
+    function bumpNonce(address vault) external {
+        if (msg.sender != owner && !authorizedSigners[msg.sender])
+            revert NotAuthorizedSigner();
+        uint256 newNonce = ++nonces[msg.sender][vault];
+        emit NonceBumped(msg.sender, vault, newNonce);
+    }
+
     // --- Vault interface ---
 
     /// @inheritdoc IFunderBase
@@ -74,7 +83,7 @@ contract Funder is IFunder, FundingVerifier {
         address signer,
         address token,
         uint256 premium,
-        uint256 size,
+        int256 size,
         uint256 acquireAmount,
         uint256 validTillTimestamp,
         bytes calldata signature
@@ -82,13 +91,12 @@ contract Funder is IFunder, FundingVerifier {
         if (signer != owner && !authorizedSigners[signer])
             revert NotAuthorizedSigner();
 
-        uint256 pricePerOption = (premium * 1e18) / size;
         uint256 currentNonce = nonces[signer][msg.sender];
         _verifyQuote(
             signer,
             currentNonce,
             size,
-            pricePerOption,
+            premium,
             validTillTimestamp,
             signature
         );

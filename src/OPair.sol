@@ -285,12 +285,12 @@ contract OPair is ReentrancyGuardTransient {
             buyerSigner,
             address(cashToken),
             premium,
-            size,
+            int256(uint256(size)), // positive = buy intent
             premium, // acquireAmount == amount: premium is always paid in full
             validTillTimestamp,
             signature
         );
-        if (cashToken.balanceOf(address(this)) - cashBefore < premium)
+        if (cashToken.balanceOf(address(this)) - cashBefore != premium)
             revert PremiumUnderpaid();
 
         uint256 fee = (uint256(premium) * FEE_BPS) / BPS;
@@ -338,13 +338,13 @@ contract OPair is ReentrancyGuardTransient {
         IFunderBase(sellerFunderAddr).requestFunds(
             sellerSigner,
             address(depositToken),
-            premium, // seller signed a price; pricePerOption = premium * 1e18 / size
-            size,
+            premium,
+            -int256(uint256(size)), // negative = sell intent
             acquireAmt, // actual collateral transfer (0 when fully netted)
             validTillTimestamp,
             signature
         );
-        if (depositToken.balanceOf(address(this)) - depositBefore < acquireAmt)
+        if (depositToken.balanceOf(address(this)) - depositBefore != acquireAmt)
             revert CollateralUnderpaid();
         if (physicalSize > 0) totalSold += physicalSize;
 
@@ -406,7 +406,7 @@ contract OPair is ReentrancyGuardTransient {
             swapAmt,
             data
         );
-        if (swapToken.balanceOf(address(this)) - balBefore < swapAmt)
+        if (swapToken.balanceOf(address(this)) - balBefore != swapAmt)
             revert CallbackUnderpaid();
 
         emit Exercised(msg.sender, size);

@@ -7,12 +7,21 @@ pragma solidity ^0.8.34;
 interface IFunderBase {
     // --- Events ---
     /// @param signer  The signer credited. For Funder (shared pool) this is informational only.
-    event FundsDeposited(address indexed signer, address indexed token, uint256 amount);
+    event FundsDeposited(
+        address indexed signer,
+        address indexed token,
+        uint256 amount
+    );
     /// @param vault   Vault that requested funds.
     /// @param signer  Signer whose quote was consumed.
     /// @param token   Token transferred.
     /// @param amount  Total amount transferred.
-    event FundsRequested(address indexed vault, address indexed signer, address indexed token, uint256 amount);
+    event FundsRequested(
+        address indexed vault,
+        address indexed signer,
+        address indexed token,
+        uint256 amount
+    );
 
     // --- Token management ---
     /// @notice Deposit `amount` of `token` from msg.sender, crediting `signer`.
@@ -27,9 +36,9 @@ interface IFunderBase {
     // --- Vault interface ---
     /// @notice Verify a Quote signature and transfer `acquireAmount` of `token` to the caller.
     ///
-    /// @param amount        Signed collateral amount (used for pricePerOption = amount * 1e18 / size).
-    ///                      Must equal _depositAmount(size) so the signature matches what the signer committed to.
-    /// @param size          Notional trade size (risk-token units). Part of the signed digest.
+    /// @param amount        Total premium the signer committed to. Part of the signed digest.
+    /// @param size          Signed notional trade size (risk-token units). Positive = buy intent,
+    ///                      negative = sell intent. Part of the signed digest.
     /// @param acquireAmount Actual tokens to transfer to the vault. May be less than `amount` when
     ///                      netting reduces the physical collateral needed, or zero for a fully-netted
     ///                      trade. The signature is still verified regardless.
@@ -37,14 +46,28 @@ interface IFunderBase {
         address signer,
         address token,
         uint256 amount,
-        uint256 size,
+        int256 size,
         uint256 acquireAmount,
         uint256 validTillTimestamp,
         bytes calldata signature
     ) external;
 
+    // --- Nonce management ---
+    /// @notice Advance the caller's own nonce for a vault, invalidating all prior signatures.
+    ///         Self-service: only msg.sender's nonce is affected.
+    function bumpNonce(address vault) external;
+
+    event NonceBumped(
+        address indexed signer,
+        address indexed vault,
+        uint256 newNonce
+    );
+
     // --- Getters ---
     /// @notice Per-signer per-vault nonce. Incremented on each successful requestFunds.
-    function nonces(address signer, address vault) external view returns (uint256);
+    function nonces(
+        address signer,
+        address vault
+    ) external view returns (uint256);
     // DOMAIN_SEPARATOR and QUOTE_TYPEHASH are public state variables on FundingVerifier.
 }

@@ -14,8 +14,7 @@ import {IFunderBase} from "./interfaces/IFunderBase.sol";
 /// @notice Shared funding contract: multiple wallets each maintain their own per-token balance.
 ///         All operations are permissionless per-user (each user manages only their own funds).
 ///
-/// @dev Signatures commit to pricePerOption. requestFunds derives it from totalAmount * 1e18 / size.
-///      Each signer has an independent nonce per vault.
+/// @dev Signatures commit to the total premium. Each signer has an independent nonce per vault.
 contract MultiFunder is IMultiFunder, FundingVerifier {
     using SafeERC20 for IERC20;
 
@@ -45,6 +44,14 @@ contract MultiFunder is IMultiFunder, FundingVerifier {
         emit FundsWithdrawn(msg.sender, token, amount);
     }
 
+    // --- Nonce management ---
+
+    /// @inheritdoc IFunderBase
+    function bumpNonce(address vault) external {
+        uint256 newNonce = ++nonces[msg.sender][vault];
+        emit NonceBumped(msg.sender, vault, newNonce);
+    }
+
     // --- Vault interface ---
 
     /// @inheritdoc IFunderBase
@@ -52,7 +59,7 @@ contract MultiFunder is IMultiFunder, FundingVerifier {
         address signer,
         address token,
         uint256 premium,
-        uint256 size,
+        int256 size,
         uint256 acquireAmount,
         uint256 validTillTimestamp,
         bytes calldata signature
@@ -60,13 +67,12 @@ contract MultiFunder is IMultiFunder, FundingVerifier {
         if (balances[signer][token] < acquireAmount)
             revert InsufficientBalance();
 
-        uint256 pricePerOption = (premium * 1e18) / size;
         uint256 currentNonce = nonces[signer][msg.sender];
         _verifyQuote(
             signer,
             currentNonce,
             size,
-            pricePerOption,
+            premium,
             validTillTimestamp,
             signature
         );

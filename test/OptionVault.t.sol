@@ -45,7 +45,7 @@ contract OPairTest is Setup {
         weth.approve(address(pair), depositAmt);
         usdc.mint(address(funder), 100e6);
 
-        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, 1e18, 100e6, expiryTimestamp + 1, 0);
+        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, int256(1e18), 100e6, expiryTimestamp + 1, 0);
 
         vm.prank(seller);
         vm.expectRevert(OPair.Expired.selector);
@@ -59,7 +59,7 @@ contract OPairTest is Setup {
         weth.approve(address(pair), 1e18);
         usdc.mint(address(funder), 100e6);
 
-        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, 1e18, 100e6, pastTime, 0);
+        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, int256(1e18), 100e6, pastTime, 0);
 
         vm.prank(seller);
         vm.expectRevert(OPair.QuoteExpired.selector);
@@ -79,7 +79,7 @@ contract OPairTest is Setup {
         weth.approve(address(pair), tinySize);
         usdc.mint(address(funder), 1e6);
 
-        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, tinySize, 1e6, block.timestamp + 1, 0);
+        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, int256(uint256(tinySize)), 1e6, block.timestamp + 1, 0);
 
         vm.prank(seller);
         vm.expectRevert(OPair.BelowMinDeposit.selector);
@@ -96,7 +96,7 @@ contract OPairTest is Setup {
         weth.approve(address(pair), size);
         usdc.mint(address(funder), premium);
 
-        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, size, premium, validTill, 0);
+        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, int256(uint256(size)), premium, validTill, 0);
 
         vm.prank(seller);
         vm.expectEmit(true, true, false, true);
@@ -134,7 +134,7 @@ contract OPairTest is Setup {
         vm.prank(buyer);
         usdc.approve(address(pair), 100e6);
 
-        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, 1e18, 1e18, expiryTimestamp + 1, 0);
+        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, -int256(1e18), 1e18, expiryTimestamp + 1, 0);
 
         vm.prank(buyer);
         vm.expectRevert(OPair.Expired.selector);
@@ -158,7 +158,8 @@ contract OPairTest is Setup {
         usdc.approve(address(pair), premium);
         weth.mint(address(funder), depositAmt);
 
-        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, size, premium, validTill, 0);
+        // mm is seller → negative size
+        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, -int256(uint256(size)), premium, validTill, 0);
 
         vm.prank(buyer);
         vm.expectEmit(true, true, false, true);
@@ -410,7 +411,7 @@ contract OPairTest is Setup {
 
         uint256 nonce = funder.nonces(mm, address(pair2));
         uint256 validTill = block.timestamp + 1 hours;
-        bytes memory sig = _signQuote(address(funder), address(pair2), mmPrivateKey, 1e18, 100e6, validTill, nonce);
+        bytes memory sig = _signQuote(address(funder), address(pair2), mmPrivateKey, int256(1e18), 100e6, validTill, nonce);
 
         vm.prank(seller);
         pair2.sell(address(funder), mm, 1e18, 100e6, validTill, sig);
@@ -443,7 +444,7 @@ contract OPairTest is Setup {
 
         usdc.mint(address(funder), premium);
 
-        bytes memory sig = _signQuote(address(funder), address(putPair), mmPrivateKey, size, premium, block.timestamp + 1 hours, 0);
+        bytes memory sig = _signQuote(address(funder), address(putPair), mmPrivateKey, int256(uint256(size)), premium, block.timestamp + 1 hours, 0);
 
         vm.prank(seller);
         putPair.sell(address(funder), mm, size, premium, block.timestamp + 1 hours, sig);

@@ -137,6 +137,7 @@ contract MultiFunderTest is Setup {
         uint128 size = 1e18;
         uint128 premium = 100e6;
         uint256 validTill = block.timestamp + 1 hours;
+        int256 signedSize = int256(uint256(size));
 
         usdc.mint(seller, premium);
         vm.startPrank(seller);
@@ -147,10 +148,10 @@ contract MultiFunderTest is Setup {
         assertEq(multiFunder.balances(signer, address(usdc)), premium);
 
         uint256 nonce = multiFunder.nonces(signer, address(pair));
-        bytes memory sig = _signQuote(address(multiFunder), address(pair), signerKey, size, premium, validTill, nonce);
+        bytes memory sig = _signQuote(address(multiFunder), address(pair), signerKey, signedSize, premium, validTill, nonce);
 
         vm.prank(address(pair));
-        multiFunder.requestFunds(signer, address(usdc), premium, size, premium, validTill, sig);
+        multiFunder.requestFunds(signer, address(usdc), premium, signedSize, premium, validTill, sig);
 
         assertEq(multiFunder.balances(signer, address(usdc)), 0);
         assertEq(usdc.balanceOf(address(pair)), premium);
@@ -160,6 +161,7 @@ contract MultiFunderTest is Setup {
         uint128 size = 1e18;
         uint128 premium = 50e6;
         uint256 validTill = block.timestamp + 1 hours;
+        int256 signedSize = int256(uint256(size));
 
         usdc.mint(address(multiFunder), premium * 2);
         vm.prank(address(0)); // direct mint bypass; top up balance manually
@@ -170,14 +172,14 @@ contract MultiFunderTest is Setup {
         multiFunder.deposit(signer, address(usdc), premium * 2);
         vm.stopPrank();
 
-        bytes memory sig1 = _signQuote(address(multiFunder), address(pair), signerKey, size, premium, validTill, 0);
+        bytes memory sig1 = _signQuote(address(multiFunder), address(pair), signerKey, signedSize, premium, validTill, 0);
         vm.prank(address(pair));
-        multiFunder.requestFunds(signer, address(usdc), premium, size, premium, validTill, sig1);
+        multiFunder.requestFunds(signer, address(usdc), premium, signedSize, premium, validTill, sig1);
         assertEq(multiFunder.nonces(signer, address(pair)), 1);
 
-        bytes memory sig2 = _signQuote(address(multiFunder), address(pair), signerKey, size, premium, validTill, 1);
+        bytes memory sig2 = _signQuote(address(multiFunder), address(pair), signerKey, signedSize, premium, validTill, 1);
         vm.prank(address(pair));
-        multiFunder.requestFunds(signer, address(usdc), premium, size, premium, validTill, sig2);
+        multiFunder.requestFunds(signer, address(usdc), premium, signedSize, premium, validTill, sig2);
         assertEq(multiFunder.nonces(signer, address(pair)), 2);
     }
 
@@ -185,6 +187,7 @@ contract MultiFunderTest is Setup {
         uint128 size = 1e18;
         uint128 premium = 100e6;
         uint256 validTill = block.timestamp + 1 hours;
+        int256 signedSize = int256(uint256(size));
 
         // Deposit less than the requested amount
         usdc.mint(seller, premium / 2);
@@ -193,25 +196,26 @@ contract MultiFunderTest is Setup {
         multiFunder.deposit(signer, address(usdc), premium / 2);
         vm.stopPrank();
 
-        bytes memory sig = _signQuote(address(multiFunder), address(pair), signerKey, size, premium, validTill, 0);
+        bytes memory sig = _signQuote(address(multiFunder), address(pair), signerKey, signedSize, premium, validTill, 0);
 
         vm.prank(address(pair));
         vm.expectRevert(IMultiFunder.InsufficientBalance.selector);
-        multiFunder.requestFunds(signer, address(usdc), premium, size, premium, validTill, sig);
+        multiFunder.requestFunds(signer, address(usdc), premium, signedSize, premium, validTill, sig);
     }
 
     function test_requestFunds_revertsNotValidVault() public {
-        bytes memory sig = _signQuote(address(multiFunder), address(0xdead), signerKey, 1e18, 100e6, block.timestamp + 1, 0);
+        bytes memory sig = _signQuote(address(multiFunder), address(0xdead), signerKey, int256(1e18), 100e6, block.timestamp + 1, 0);
 
         vm.prank(address(0xdead));
         vm.expectRevert(FundingVerifier.NotValidVault.selector);
-        multiFunder.requestFunds(signer, address(usdc), 100e6, 1e18, 100e6, block.timestamp + 1, sig);
+        multiFunder.requestFunds(signer, address(usdc), 100e6, int256(1e18), 100e6, block.timestamp + 1, sig);
     }
 
     function test_requestFunds_revertsInvalidSignature() public {
         uint128 size = 1e18;
         uint128 premium = 100e6;
         uint256 validTill = block.timestamp + 1 hours;
+        int256 signedSize = int256(uint256(size));
 
         usdc.mint(seller, premium);
         vm.startPrank(seller);
@@ -220,17 +224,18 @@ contract MultiFunderTest is Setup {
         vm.stopPrank();
 
         // Sign with wrong key (mmPrivateKey instead of signerKey)
-        bytes memory sig = _signQuote(address(multiFunder), address(pair), mmPrivateKey, size, premium, validTill, 0);
+        bytes memory sig = _signQuote(address(multiFunder), address(pair), mmPrivateKey, signedSize, premium, validTill, 0);
 
         vm.prank(address(pair));
         vm.expectRevert(FundingVerifier.InvalidSignature.selector);
-        multiFunder.requestFunds(signer, address(usdc), premium, size, premium, validTill, sig);
+        multiFunder.requestFunds(signer, address(usdc), premium, signedSize, premium, validTill, sig);
     }
 
     function test_requestFunds_revertsNonceReplay() public {
         uint128 size = 1e18;
         uint128 premium = 50e6;
         uint256 validTill = block.timestamp + 1 hours;
+        int256 signedSize = int256(uint256(size));
 
         usdc.mint(seller, premium * 2);
         vm.startPrank(seller);
@@ -238,20 +243,21 @@ contract MultiFunderTest is Setup {
         multiFunder.deposit(signer, address(usdc), premium * 2);
         vm.stopPrank();
 
-        bytes memory sig = _signQuote(address(multiFunder), address(pair), signerKey, size, premium, validTill, 0);
+        bytes memory sig = _signQuote(address(multiFunder), address(pair), signerKey, signedSize, premium, validTill, 0);
         vm.prank(address(pair));
-        multiFunder.requestFunds(signer, address(usdc), premium, size, premium, validTill, sig);
+        multiFunder.requestFunds(signer, address(usdc), premium, signedSize, premium, validTill, sig);
 
         // Replay: nonce has advanced to 1, so sig (for nonce 0) is now invalid
         vm.prank(address(pair));
         vm.expectRevert(FundingVerifier.InvalidSignature.selector);
-        multiFunder.requestFunds(signer, address(usdc), premium, size, premium, validTill, sig);
+        multiFunder.requestFunds(signer, address(usdc), premium, signedSize, premium, validTill, sig);
     }
 
     function test_requestFunds_emitsEvent() public {
         uint128 size = 1e18;
         uint128 premium = 100e6;
         uint256 validTill = block.timestamp + 1 hours;
+        int256 signedSize = int256(uint256(size));
 
         usdc.mint(seller, premium);
         vm.startPrank(seller);
@@ -259,11 +265,11 @@ contract MultiFunderTest is Setup {
         multiFunder.deposit(signer, address(usdc), premium);
         vm.stopPrank();
 
-        bytes memory sig = _signQuote(address(multiFunder), address(pair), signerKey, size, premium, validTill, 0);
+        bytes memory sig = _signQuote(address(multiFunder), address(pair), signerKey, signedSize, premium, validTill, 0);
 
         vm.prank(address(pair));
         vm.expectEmit(true, true, true, true);
         emit IFunderBase.FundsRequested(address(pair), signer, address(usdc), premium);
-        multiFunder.requestFunds(signer, address(usdc), premium, size, premium, validTill, sig);
+        multiFunder.requestFunds(signer, address(usdc), premium, signedSize, premium, validTill, sig);
     }
 }
