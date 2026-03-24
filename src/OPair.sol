@@ -120,6 +120,7 @@ contract OPair is ReentrancyGuardTransient {
     error CollateralUnderpaid();
     error CallbackUnderpaid();
     error NewExpiryNotLater();
+    error DepositWindowClosed();
 
     // -------------------------------------------------------------------------
     // Events
@@ -153,6 +154,7 @@ contract OPair is ReentrancyGuardTransient {
         uint256 swapSettled
     );
     event ExpiryExtended(uint256 newExpiry);
+    event DepositDeadlineUpdated(uint256 newDeadline);
 
     // -------------------------------------------------------------------------
     // Immutables
@@ -170,6 +172,7 @@ contract OPair is ReentrancyGuardTransient {
     // Mutable state
     // -------------------------------------------------------------------------
     uint256 public expiry; // In extreme circumstances, the admin may extend expiry.
+    uint256 public depositDeadline; // No new positions after this timestamp.
 
     // All balances are tracked as risk token balances. Before withdrawing cash tokens they must
     // be converted via strike.
@@ -208,6 +211,11 @@ contract OPair is ReentrancyGuardTransient {
         _;
     }
 
+    modifier beforeDepositDeadline() {
+        if (block.timestamp >= depositDeadline) revert DepositWindowClosed();
+        _;
+    }
+
     modifier afterExpiry() {
         if (block.timestamp < expiry) revert NotExpired();
         _;
@@ -235,6 +243,7 @@ contract OPair is ReentrancyGuardTransient {
         minDepositSize = _minDepositSize;
         depositToken = _isCall ? IERC20(_riskToken) : IERC20(_cashToken);
         swapToken = _isCall ? IERC20(_cashToken) : IERC20(_riskToken);
+        depositDeadline = _expiry - 24 hours;
 
         new OLongToken(identifier, symbol);
         new OShortToken(identifier, symbol);
@@ -258,7 +267,7 @@ contract OPair is ReentrancyGuardTransient {
         uint128 premium,
         uint256 validTillTimestamp,
         bytes calldata signature
-    ) external beforeExpiry nonReentrant {
+    ) external beforeDepositDeadline nonReentrant {
         if (validTillTimestamp < block.timestamp) revert QuoteExpired();
         if (size == 0) revert ZeroSize();
         if (size < minDepositSize) revert BelowMinDeposit();
@@ -321,7 +330,7 @@ contract OPair is ReentrancyGuardTransient {
         uint128 premium,
         uint256 validTillTimestamp,
         bytes calldata signature
-    ) external beforeExpiry nonReentrant {
+    ) external beforeDepositDeadline nonReentrant {
         if (validTillTimestamp < block.timestamp) revert QuoteExpired();
         if (size == 0) revert ZeroSize();
         if (size < minDepositSize) revert BelowMinDeposit();
@@ -488,6 +497,11 @@ contract OPair is ReentrancyGuardTransient {
         if (newExpiry <= expiry) revert NewExpiryNotLater();
         expiry = newExpiry;
         emit ExpiryExtended(newExpiry);
+    }
+
+    function setDepositDeadline(uint256 newDeadline) external onlyFactoryOwner {
+        depositDeadline = newDeadline;
+        emit DepositDeadlineUpdated(newDeadline);
     }
 
     // -------------------------------------------------------------------------

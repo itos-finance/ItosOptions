@@ -36,8 +36,8 @@ contract OPairTest is Setup {
         assertEq(pair.totalFees(), fee);
     }
 
-    function test_sell_revertsAfterExpiry() public {
-        vm.warp(expiryTimestamp);
+    function test_sell_revertsAfterDepositDeadline() public {
+        vm.warp(pair.depositDeadline());
 
         uint256 depositAmt = 1e18;
         weth.mint(seller, depositAmt);
@@ -48,7 +48,7 @@ contract OPairTest is Setup {
         bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, int256(1e18), 100e6, expiryTimestamp + 1, 0);
 
         vm.prank(seller);
-        vm.expectRevert(OPair.Expired.selector);
+        vm.expectRevert(OPair.DepositWindowClosed.selector);
         pair.sell(address(funder), mm, 1e18, 100e6, expiryTimestamp + 1, sig);
     }
 
@@ -127,8 +127,8 @@ contract OPairTest is Setup {
         assertEq(usdc.balanceOf(address(funder)), premium - fee);
     }
 
-    function test_buy_revertsAfterExpiry() public {
-        vm.warp(expiryTimestamp);
+    function test_buy_revertsAfterDepositDeadline() public {
+        vm.warp(pair.depositDeadline());
 
         usdc.mint(buyer, 100e6);
         vm.prank(buyer);
@@ -137,7 +137,7 @@ contract OPairTest is Setup {
         bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, -int256(1e18), 1e18, expiryTimestamp + 1, 0);
 
         vm.prank(buyer);
-        vm.expectRevert(OPair.Expired.selector);
+        vm.expectRevert(OPair.DepositWindowClosed.selector);
         pair.buy(address(funder), mm, 1e18, 100e6, expiryTimestamp + 1, sig);
     }
 
@@ -366,6 +366,46 @@ contract OPairTest is Setup {
         vm.prank(seller);
         vm.expectRevert(OPair.NotFactoryOwner.selector);
         pair.extendExpiry(expiryTimestamp + 1 days);
+    }
+
+    // =========================================================================
+    // setDepositDeadline
+    // =========================================================================
+
+    function test_depositDeadline_defaultIs24HoursBeforeExpiry() public view {
+        assertEq(pair.depositDeadline(), expiryTimestamp - 24 hours);
+    }
+
+    function test_setDepositDeadline_factoryOwnerCanSet() public {
+        uint256 newDeadline = expiryTimestamp - 1 hours;
+        vm.prank(admin);
+        pair.setDepositDeadline(newDeadline);
+        assertEq(pair.depositDeadline(), newDeadline);
+    }
+
+    function test_setDepositDeadline_revertsNotFactoryOwner() public {
+        vm.prank(seller);
+        vm.expectRevert(OPair.NotFactoryOwner.selector);
+        pair.setDepositDeadline(expiryTimestamp - 1 hours);
+    }
+
+    function test_setDepositDeadline_allowsTradesAfterExtension() public {
+        // Close deposit window
+        vm.prank(admin);
+        pair.setDepositDeadline(block.timestamp);
+
+        // Trading blocked
+        vm.prank(seller);
+        vm.expectRevert(OPair.DepositWindowClosed.selector);
+        pair.sell(address(funder), mm, 1e18, 100e6, block.timestamp + 1, hex"");
+
+        // Admin extends deadline
+        vm.prank(admin);
+        pair.setDepositDeadline(block.timestamp + 1 days);
+
+        // Trading works again
+        _doSell(pair, seller, 1e18, 100e6);
+        assertEq(pair.totalSold(), 1e18);
     }
 
     // =========================================================================
