@@ -72,8 +72,10 @@ PAIR_COUNT=$(jq '.pairs | length' "$CONFIG_FILE")
 
 # Strike multiplier = 10^(18 + cash_decimals - risk_decimals)
 EXP=$(( 18 + CASH_DEC - RISK_DEC ))
-MULTIPLIER=1
-for _ in $(seq 1 "$EXP"); do MULTIPLIER=$(( MULTIPLIER * 10 )); done
+MULTIPLIER=$(python3 -c "print(10 ** $EXP)")
+
+# Optional strike_divisor for sub-dollar assets (e.g. MON at $0.021 uses divisor=1000)
+STRIKE_DIVISOR=$(jq -r '.strike_divisor // 1' "$CONFIG_FILE")
 
 # Factory from deployment JSON
 export FACTORY
@@ -115,7 +117,7 @@ for i in $(seq 0 $(( PAIR_COUNT - 1 ))); do
   fi
 
   # ── Strike encoding ────────────────────────────────────────────────────────
-  STRIKE_ENC=$(( STRIKE_USD * MULTIPLIER ))
+  STRIKE_ENC=$(python3 -c "print(int($STRIKE_USD * $MULTIPLIER // $STRIKE_DIVISOR))")
 
   # ── Identifier / symbol ────────────────────────────────────────────────────
   UNDERLYING_UP=$(echo "$UNDERLYING" | tr '[:lower:]' '[:upper:]')

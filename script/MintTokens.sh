@@ -40,23 +40,40 @@ fi
 
 WETH=$(jq -r '.contracts.weth' "$DEPLOY_JSON")
 USDC=$(jq -r '.contracts.usdc' "$DEPLOY_JSON")
+BTC=$(jq -r '.contracts.btc // ""' "$DEPLOY_JSON")
+MON=$(jq -r '.contracts.mon // ""' "$DEPLOY_JSON")
 
-WETH_AMOUNT="1000000000000000000000"  # 1000 WETH (18 decimals)
-USDC_AMOUNT="2000000000000"           # 2,000,000 USDC (6 decimals)
+WETH_AMOUNT="1000000000000000000000"    # 1000 WETH (18 decimals)
+USDC_AMOUNT="2000000000000"             # 2,000,000 USDC (6 decimals)
+BTC_AMOUNT="1000000000"                 # 10 BTC (8 decimals)
+MON_AMOUNT="100000000000000000000000"   # 100,000 MON (18 decimals)
 
 echo "Minting tokens to $RECIPIENT"
 echo "  WETH ($WETH): 1000 WETH"
 echo "  USDC ($USDC): 2,000,000 USDC"
+[ -n "$BTC" ] && echo "  BTC  ($BTC): 10 BTC"
+[ -n "$MON" ] && echo "  MON  ($MON): 100,000 MON"
 echo ""
 
 cast send "$WETH" "mint(address,uint256)" "$RECIPIENT" "$WETH_AMOUNT" \
   --rpc-url "$RPC_URL" --private-key "$DEPLOYER_PRIVATE_KEY"
-
 echo "  WETH mint confirmed."
 
 cast send "$USDC" "mint(address,uint256)" "$RECIPIENT" "$USDC_AMOUNT" \
   --rpc-url "$RPC_URL" --private-key "$DEPLOYER_PRIVATE_KEY"
-
 echo "  USDC mint confirmed."
+
+if [ -n "$BTC" ]; then
+  cast send "$BTC" "mint(address,uint256)" "$RECIPIENT" "$BTC_AMOUNT" \
+    --rpc-url "$RPC_URL" --private-key "$DEPLOYER_PRIVATE_KEY"
+  echo "  BTC mint confirmed."
+fi
+
+if [ -n "$MON" ]; then
+  cast send "$MON" "mint(address,uint256)" "$RECIPIENT" "$MON_AMOUNT" \
+    --rpc-url "$RPC_URL" --private-key "$DEPLOYER_PRIVATE_KEY"
+  echo "  MON mint confirmed."
+fi
+
 echo ""
-echo "Done. Minted 1000 WETH + 2M USDC to $RECIPIENT"
+echo "Done. Minted tokens to $RECIPIENT"

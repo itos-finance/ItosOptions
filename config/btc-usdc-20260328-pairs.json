@@ -1,0 +1,45 @@
+{
+  "description": "BTC/USDC options vaults — generated 2026-03-25, spot $71078.9266904, step 5000",
+  "underlying_symbol": "BTC",
+  "cash_symbol": "USDC",
+  "risk_token": "0x9293feAB7576F55F7E90276374aAd841e633ae5B",
+  "cash_token": "0x9fAf34ddCF9D26b6e5f12482C2942c28f207B7B7",
+  "risk_decimals": 8,
+  "cash_decimals": 6,
+  "min_deposit_size": "1000000",
+  "expiry": 1774656000,
+  "pairs": [
+    {
+      "strike_usd": 50000,
+      "is_call": false
+    },
+    {
+      "strike_usd": 55000,
+      "is_call": false
+    },
+    {
+      "strike_usd": 60000,
+      "is_call": false
+    },
+    {
+      "strike_usd": 65000,
+      "is_call": false
+    },
+    {
+      "strike_usd": 75000,
+      "is_call": true
+    },
+    {
+      "strike_usd": 80000,
+      "is_call": true
+    },
+    {
+      "strike_usd": 85000,
+      "is_call": true
+    },
+    {
+      "strike_usd": 90000,
+      "is_call": true
+    }
+  ]
+}
