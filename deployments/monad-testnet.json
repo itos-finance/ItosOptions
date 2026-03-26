@@ -117,6 +117,10 @@
     "maker_3": {
       "address": "0x50699201eCF64f46D0038CB471ACA9ABA3742B76",
       "funder": "0x38b86Bf9aa299a413BA11ad88A0e4AFd92D0634f"
+    },
+    "maker_4": {
+      "address": "0x566b9703db740635f99Ab231aD392C3dF9a16ae9",
+      "funder": "0x7692f3D68e96215427Bf9709D98c9E96884Ab038"
     }
   }
 }
