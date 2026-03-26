@@ -121,6 +121,7 @@ contract OPair is ReentrancyGuardTransient {
     error CallbackUnderpaid();
     error NewExpiryNotLater();
     error DepositWindowClosed();
+    error ExerciseTooEarly();
 
     // -------------------------------------------------------------------------
     // Events
@@ -155,6 +156,7 @@ contract OPair is ReentrancyGuardTransient {
     );
     event ExpiryExtended(uint256 newExpiry);
     event DepositDeadlineUpdated(uint256 newDeadline);
+    event ExerciseEarliestUpdated(uint256 newEarliest);
 
     // -------------------------------------------------------------------------
     // Immutables
@@ -173,6 +175,7 @@ contract OPair is ReentrancyGuardTransient {
     // -------------------------------------------------------------------------
     uint256 public expiry; // In extreme circumstances, the admin may extend expiry.
     uint256 public depositDeadline; // No new positions after this timestamp.
+    uint256 public exerciseEarliest; // No exercise before this timestamp.
 
     // All balances are tracked as risk token balances. Before withdrawing cash tokens they must
     // be converted via strike.
@@ -244,6 +247,7 @@ contract OPair is ReentrancyGuardTransient {
         depositToken = _isCall ? IERC20(_riskToken) : IERC20(_cashToken);
         swapToken = _isCall ? IERC20(_cashToken) : IERC20(_riskToken);
         depositDeadline = _expiry - 24 hours;
+        exerciseEarliest = block.timestamp + 4 hours;
 
         new OLongToken(identifier, symbol);
         new OShortToken(identifier, symbol);
@@ -390,6 +394,7 @@ contract OPair is ReentrancyGuardTransient {
         address callbackContract,
         bytes calldata data
     ) external beforeExpiry nonReentrant {
+        if (block.timestamp < exerciseEarliest) revert ExerciseTooEarly();
         if (size == 0) revert ZeroSize();
         if (netPosition[msg.sender] < int256(uint256(size)))
             revert InsufficientLongPosition();
@@ -502,6 +507,11 @@ contract OPair is ReentrancyGuardTransient {
     function setDepositDeadline(uint256 newDeadline) external onlyFactoryOwner {
         depositDeadline = newDeadline;
         emit DepositDeadlineUpdated(newDeadline);
+    }
+
+    function setExerciseEarliest(uint256 newEarliest) external onlyFactoryOwner {
+        exerciseEarliest = newEarliest;
+        emit ExerciseEarliestUpdated(newEarliest);
     }
 
     // -------------------------------------------------------------------------

@@ -25,6 +25,7 @@ contract IntegrationTest is Setup {
 
         // 2. mm exercises all
         _fundCallbackForExercise(pair, size);
+        vm.warp(pair.exerciseEarliest());
         vm.prank(mm);
         pair.exercise(size, address(callback), "");
         assertEq(pair.totalExercised(), size);
@@ -59,6 +60,7 @@ contract IntegrationTest is Setup {
         assertEq(putPair.netPosition(mm), int256(uint256(size)));
 
         _fundCallbackForExercise(putPair, size);
+        vm.warp(putPair.exerciseEarliest());
         vm.prank(mm);
         putPair.exercise(size, address(callback), "");
 
@@ -98,6 +100,7 @@ contract IntegrationTest is Setup {
 
         // Exercise 3 ETH — hits seller1's position first (preferExercised)
         _fundCallbackForExercise(pair, 3e18);
+        vm.warp(pair.exerciseEarliest());
         vm.prank(mm);
         pair.exercise(3e18, address(callback), "");
 
@@ -124,6 +127,7 @@ contract IntegrationTest is Setup {
 
         // Exercise 4 out of 5 total
         _fundCallbackForExercise(pair, 4e18);
+        vm.warp(pair.exerciseEarliest());
         vm.prank(mm);
         pair.exercise(4e18, address(callback), "");
 
@@ -198,6 +202,7 @@ contract IntegrationTest is Setup {
 
         // buyer exercises
         _fundCallbackForExercise(pair, size);
+        vm.warp(pair.exerciseEarliest());
         vm.prank(buyer);
         pair.exercise(size, address(callback), "");
         assertEq(pair.totalExercised(), size);
@@ -253,6 +258,7 @@ contract IntegrationTest is Setup {
         _doSell(pair, seller, 2e18, 200e6);
 
         _fundCallbackForExercise(pair, 1e18);
+        vm.warp(pair.exerciseEarliest());
         vm.prank(mm);
         pair.exercise(1e18, address(callback), "");
 

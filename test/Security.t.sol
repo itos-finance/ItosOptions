@@ -296,6 +296,7 @@ contract SecurityTest is Setup {
         _doSell(pair, seller, 2e18, 200e6);
 
         _fundCallbackForExercise(pair, 2e18);
+        vm.warp(pair.exerciseEarliest());
         vm.prank(mm);
         pair.exercise(2e18, address(callback), "");
 
@@ -313,6 +314,7 @@ contract SecurityTest is Setup {
         usdc.mint(address(reentrantCb), swapAmt);
         reentrantCb.setReentrantSize(1e18);
 
+        vm.warp(pair.exerciseEarliest());
         vm.prank(mm);
         pair.exercise(1e18, address(reentrantCb), "");
 

@@ -175,6 +175,7 @@ contract OPairTest is Setup {
         _doSell(pair, seller, 1e18, 100e6);
         _fundCallbackForExercise(pair, 1e18);
 
+        vm.warp(pair.exerciseEarliest());
         vm.prank(mm);
         pair.exercise(1e18, address(callback), "");
 
@@ -186,6 +187,7 @@ contract OPairTest is Setup {
         _doSell(pair, seller, 1e18, 100e6);
         _fundCallbackForExercise(pair, 1e18);
 
+        vm.warp(pair.exerciseEarliest());
         uint256 swapAmt = (uint256(1e18) * STRIKE) / 1e18;
         vm.prank(mm);
         pair.exercise(1e18, address(callback), "");
@@ -199,6 +201,7 @@ contract OPairTest is Setup {
         _doSell(pair, seller, 2e18, 200e6);
         _fundCallbackForExercise(pair, 1e18);
 
+        vm.warp(pair.exerciseEarliest());
         vm.prank(mm);
         pair.exercise(1e18, address(callback), "");
 
@@ -209,12 +212,14 @@ contract OPairTest is Setup {
     function test_exercise_revertsInsufficientLongPosition() public {
         _doSell(pair, seller, 1e18, 100e6);
 
+        vm.warp(pair.exerciseEarliest());
         vm.prank(mm);
         vm.expectRevert(OPair.InsufficientLongPosition.selector);
         pair.exercise(2e18, address(callback), "");
     }
 
     function test_exercise_revertsZeroSize() public {
+        vm.warp(pair.exerciseEarliest());
         vm.prank(mm);
         vm.expectRevert(OPair.ZeroSize.selector);
         pair.exercise(0, address(callback), "");
@@ -234,6 +239,7 @@ contract OPairTest is Setup {
         _fundCallbackForExercise(pair, 1e18);
         callback.setUnderpay(true);
 
+        vm.warp(pair.exerciseEarliest());
         vm.prank(mm);
         vm.expectRevert(OPair.CallbackUnderpaid.selector);
         pair.exercise(1e18, address(callback), "");
@@ -243,6 +249,7 @@ contract OPairTest is Setup {
         _doSell(pair, seller, 1e18, 100e6);
         _fundCallbackForExercise(pair, 1e18);
 
+        vm.warp(pair.exerciseEarliest());
         vm.prank(mm);
         vm.expectEmit(true, false, false, true);
         emit OPair.Exercised(mm, 1e18);
@@ -267,6 +274,7 @@ contract OPairTest is Setup {
         _doSell(pair, seller, 1e18, 100e6);
         _fundCallbackForExercise(pair, 1e18);
 
+        vm.warp(pair.exerciseEarliest());
         vm.prank(mm);
         pair.exercise(1e18, address(callback), "");
 
@@ -389,6 +397,25 @@ contract OPairTest is Setup {
         pair.setDepositDeadline(expiryTimestamp - 1 hours);
     }
 
+    function test_exercise_allowedAfterDepositDeadline() public {
+        // Create a position before the deposit deadline
+        _doSell(pair, seller, 1e18, 100e6);
+        _fundCallbackForExercise(pair, 1e18);
+
+        // Warp past deposit deadline but before expiry
+        vm.warp(pair.depositDeadline());
+
+        // New deposits are blocked
+        vm.prank(seller);
+        vm.expectRevert(OPair.DepositWindowClosed.selector);
+        pair.sell(address(funder), mm, 1e18, 100e6, block.timestamp + 1, hex"");
+
+        // But exercise still works
+        vm.prank(mm);
+        pair.exercise(1e18, address(callback), "");
+        assertEq(pair.totalExercised(), 1e18);
+    }
+
     function test_setDepositDeadline_allowsTradesAfterExtension() public {
         // Close deposit window
         vm.prank(admin);
@@ -406,6 +433,77 @@ contract OPairTest is Setup {
         // Trading works again
         _doSell(pair, seller, 1e18, 100e6);
         assertEq(pair.totalSold(), 1e18);
+    }
+
+    // =========================================================================
+    // exerciseEarliest
+    // =========================================================================
+
+    function test_exerciseEarliest_defaultIs4HoursAfterCreation() public view {
+        // block.timestamp at setUp time + 4 hours
+        assertEq(pair.exerciseEarliest(), 1 + 4 hours); // block.timestamp starts at 1 in foundry
+    }
+
+    function test_exercise_revertsBeforeExerciseEarliest() public {
+        _doSell(pair, seller, 1e18, 100e6);
+        _fundCallbackForExercise(pair, 1e18);
+
+        // Still before exerciseEarliest
+        vm.prank(mm);
+        vm.expectRevert(OPair.ExerciseTooEarly.selector);
+        pair.exercise(1e18, address(callback), "");
+    }
+
+    function test_exercise_worksAfterExerciseEarliest() public {
+        _doSell(pair, seller, 1e18, 100e6);
+        _fundCallbackForExercise(pair, 1e18);
+
+        vm.warp(pair.exerciseEarliest());
+        vm.prank(mm);
+        pair.exercise(1e18, address(callback), "");
+        assertEq(pair.totalExercised(), 1e18);
+    }
+
+    function test_deposit_allowedBeforeExerciseEarliest() public {
+        // Deposits work even though exercise is delayed
+        _doSell(pair, seller, 1e18, 100e6);
+        assertEq(pair.totalSold(), 1e18);
+    }
+
+    function test_setExerciseEarliest_factoryOwnerCanSet() public {
+        uint256 newEarliest = block.timestamp + 8 hours;
+        vm.prank(admin);
+        pair.setExerciseEarliest(newEarliest);
+        assertEq(pair.exerciseEarliest(), newEarliest);
+    }
+
+    function test_setExerciseEarliest_revertsNotFactoryOwner() public {
+        vm.prank(seller);
+        vm.expectRevert(OPair.NotFactoryOwner.selector);
+        pair.setExerciseEarliest(block.timestamp + 8 hours);
+    }
+
+    function test_exercise_revertsAfterAdminExtendsDelay() public {
+        _doSell(pair, seller, 1e18, 100e6);
+        _fundCallbackForExercise(pair, 1e18);
+
+        // Warp past default 4h delay
+        vm.warp(pair.exerciseEarliest());
+
+        // Admin extends the delay further
+        vm.prank(admin);
+        pair.setExerciseEarliest(block.timestamp + 2 hours);
+
+        // Exercise now blocked again
+        vm.prank(mm);
+        vm.expectRevert(OPair.ExerciseTooEarly.selector);
+        pair.exercise(1e18, address(callback), "");
+
+        // Warp past new delay — exercise works
+        vm.warp(pair.exerciseEarliest());
+        vm.prank(mm);
+        pair.exercise(1e18, address(callback), "");
+        assertEq(pair.totalExercised(), 1e18);
     }
 
     // =========================================================================
@@ -498,6 +596,7 @@ contract OPairTest is Setup {
         _doSell(putPair, seller, 1e18, 50e6);
         _fundCallbackForExercise(putPair, 1e18);
 
+        vm.warp(putPair.exerciseEarliest());
         vm.prank(mm);
         putPair.exercise(1e18, address(callback), "");
 
