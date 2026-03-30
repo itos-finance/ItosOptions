@@ -99,7 +99,14 @@
     "pair_mon_usdc_call_24_20260424": "0x4D8366212CBcD37BF06e7A6db562854c2e80dAf8",
     "pair_mon_usdc_call_27_20260424": "0x9ECFc7ce15f86595CE8Aff33Ae3EA1894807B0F4",
     "pair_mon_usdc_call_30_20260424": "0x98c2017cCB47CcE3A4A973b2fD6EDD2B56246f19",
-    "pair_mon_usdc_call_33_20260424": "0x2660cE7190BB3EC83dBa8FA544036c08cbc9ceB4"
+    "pair_mon_usdc_call_33_20260424": "0x2660cE7190BB3EC83dBa8FA544036c08cbc9ceB4",
+    "pair_weth_usdc_put_1250_20260416": "0xFddbEDCC61442844695A4514587630bE5091349B",
+    "pair_weth_usdc_put_1500_20260416": "0xDfcBea6eD4775BD04450867A7A59cF7C04529595",
+    "pair_weth_usdc_put_1750_20260416": "0x0Bb9227a0Da1b12eCac8718e211078B9bC1BaFFb",
+    "pair_weth_usdc_call_2500_20260416": "0xef22b586b25a084DccC94A89d122e734930b2f6a",
+    "pair_weth_usdc_call_2750_20260416": "0x0D3fb96813709B5c2AdB3E7aA8131Ea00f8Ab548",
+    "pair_weth_usdc_call_3000_20260416": "0x2faB3A876E7E78506C285CC34F3E1972E5106773",
+    "pair_weth_usdc_call_3250_20260416": "0x950f73607Ee744fc4708998D205831CCcd573838"
   },
   "maker_funders": {
     "maker_0": {
