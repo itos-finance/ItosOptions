@@ -61,8 +61,8 @@ while IFS= read -r line; do
   FUNDER_ADDRS+=("$line")
 done < <(echo "$OUTPUT" | grep "Funder deployed at:" | grep -oE '0x[0-9a-fA-F]{40}')
 
-if [ ${#FUNDER_ADDRS[@]} -ne 3 ]; then
-  echo "WARNING: Expected 3 funder addresses, got ${#FUNDER_ADDRS[@]}"
+if [ ${#FUNDER_ADDRS[@]} -ne 4 ]; then
+  echo "WARNING: Expected 4 funder addresses, got ${#FUNDER_ADDRS[@]}"
   echo "Attempting to parse from broadcast artifacts..."
 
   # Fallback: parse from forge broadcast artifacts
@@ -75,42 +75,47 @@ if [ ${#FUNDER_ADDRS[@]} -ne 3 ]; then
   fi
 fi
 
-MAKER_ADDRESSES=("0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC" "0x90F79bf6EB2c4f870365E785982E1f101E93b906" "0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65")
+# Anvil deterministic accounts #2, #3, #4 + quoter service maker
+MAKER_ADDRESSES=(
+  "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC"
+  "0x90F79bf6EB2c4f870365E785982E1f101E93b906"
+  "0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65"
+  "0x50699201eCF64f46D0038CB471ACA9ABA3742B76"
+)
 
 # Update deployment JSON with maker funders
-if [ ${#FUNDER_ADDRS[@]} -eq 3 ]; then
+if [ ${#FUNDER_ADDRS[@]} -eq 4 ]; then
   echo ""
   echo "[*] Updating $DEPLOY_JSON with maker funders..."
 
   jq --arg f0 "${FUNDER_ADDRS[0]}" \
      --arg f1 "${FUNDER_ADDRS[1]}" \
      --arg f2 "${FUNDER_ADDRS[2]}" \
+     --arg f3 "${FUNDER_ADDRS[3]}" \
      --arg m0 "${MAKER_ADDRESSES[0]}" \
      --arg m1 "${MAKER_ADDRESSES[1]}" \
      --arg m2 "${MAKER_ADDRESSES[2]}" \
+     --arg m3 "${MAKER_ADDRESSES[3]}" \
      '.maker_funders = {
         "maker_0": { "address": $m0, "funder": $f0 },
         "maker_1": { "address": $m1, "funder": $f1 },
-        "maker_2": { "address": $m2, "funder": $f2 }
+        "maker_2": { "address": $m2, "funder": $f2 },
+        "maker_3": { "address": $m3, "funder": $f3 }
       }' "$DEPLOY_JSON" > "${DEPLOY_JSON}.tmp" && mv "${DEPLOY_JSON}.tmp" "$DEPLOY_JSON"
 
   echo ""
   echo "========================================="
   echo " Maker Setup Complete!"
   echo "========================================="
-  echo ""
-  echo "  Maker 0: ${MAKER_ADDRESSES[0]}"
-  echo "    Funder: ${FUNDER_ADDRS[0]}"
-  echo ""
-  echo "  Maker 1: ${MAKER_ADDRESSES[1]}"
-  echo "    Funder: ${FUNDER_ADDRS[1]}"
-  echo ""
-  echo "  Maker 2: ${MAKER_ADDRESSES[2]}"
-  echo "    Funder: ${FUNDER_ADDRS[2]}"
+  for i in 0 1 2 3; do
+    echo ""
+    echo "  Maker $i: ${MAKER_ADDRESSES[$i]}"
+    echo "    Funder: ${FUNDER_ADDRS[$i]}"
+  done
   echo ""
 else
   echo ""
-  echo "WARNING: Could not parse all 3 funder addresses."
+  echo "WARNING: Could not parse all 4 funder addresses."
   echo "Please update $DEPLOY_JSON manually."
   echo "Parsed addresses: ${FUNDER_ADDRS[*]:-none}"
 fi

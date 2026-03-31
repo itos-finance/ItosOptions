@@ -22,23 +22,25 @@ contract SetupMakers is Script {
     address constant MAKER_0 = 0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC;
     address constant MAKER_1 = 0x90F79bf6EB2c4f870365E785982E1f101E93b906;
     address constant MAKER_2 = 0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65;
+    // Quoter service maker
+    address constant MAKER_3 = 0x50699201eCF64f46D0038CB471ACA9ABA3742B76;
 
     function run() external {
         address factory = vm.envAddress("FACTORY");
         MockERC20 weth = MockERC20(vm.envAddress("WETH"));
         MockERC20 usdc = MockERC20(vm.envAddress("USDC"));
 
-        address[3] memory makers = [MAKER_0, MAKER_1, MAKER_2];
+        address[4] memory makers = [MAKER_0, MAKER_1, MAKER_2, MAKER_3];
 
         vm.startBroadcast();
 
         // 1. Mint tokens to deployer
-        weth.mint(msg.sender, 1000 ether);
-        usdc.mint(msg.sender, 2_000_000e6);
-        console.log("Minted 1000 WETH + 2M USDC to deployer:", msg.sender);
+        weth.mint(msg.sender, 1500 ether);
+        usdc.mint(msg.sender, 3_000_000e6);
+        console.log("Minted 1500 WETH + 3M USDC to deployer:", msg.sender);
 
         // 2. For each maker: mint tokens, deploy funder, add signer, deposit
-        for (uint256 i = 0; i < 3; i++) {
+        for (uint256 i = 0; i < 4; i++) {
             address maker = makers[i];
 
             // Mint directly to maker wallet
