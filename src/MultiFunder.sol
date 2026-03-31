@@ -47,8 +47,8 @@ contract MultiFunder is IMultiFunder, FundingVerifier {
     // --- Nonce management ---
 
     /// @inheritdoc IFunderBase
-    function bumpNonce(address vault) external {
-        uint256 newNonce = ++nonces[msg.sender][vault];
+    function bumpNonce(address vault, uint256 amount) external {
+        uint256 newNonce = nonces[msg.sender][vault] += amount;
         emit NonceBumped(msg.sender, vault, newNonce);
     }
 

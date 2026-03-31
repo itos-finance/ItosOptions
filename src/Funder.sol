@@ -69,10 +69,10 @@ contract Funder is IFunder, FundingVerifier {
     // --- Nonce management ---
 
     /// @inheritdoc IFunderBase
-    function bumpNonce(address vault) external {
+    function bumpNonce(address vault, uint256 amount) external {
         if (msg.sender != owner && !authorizedSigners[msg.sender])
             revert NotAuthorizedSigner();
-        uint256 newNonce = ++nonces[msg.sender][vault];
+        uint256 newNonce = nonces[msg.sender][vault] += amount;
         emit NonceBumped(msg.sender, vault, newNonce);
     }
 
