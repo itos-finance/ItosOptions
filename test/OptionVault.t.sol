@@ -45,7 +45,15 @@ contract OPairTest is Setup {
         weth.approve(address(pair), depositAmt);
         usdc.mint(address(funder), 100e6);
 
-        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, int256(1e18), 100e6, expiryTimestamp + 1, 0);
+        bytes memory sig = _signQuote(
+            address(funder),
+            address(pair),
+            mmPrivateKey,
+            int256(1e18),
+            100e6,
+            expiryTimestamp + 1,
+            0
+        );
 
         vm.prank(seller);
         vm.expectRevert(OPair.DepositWindowClosed.selector);
@@ -59,7 +67,15 @@ contract OPairTest is Setup {
         weth.approve(address(pair), 1e18);
         usdc.mint(address(funder), 100e6);
 
-        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, int256(1e18), 100e6, pastTime, 0);
+        bytes memory sig = _signQuote(
+            address(funder),
+            address(pair),
+            mmPrivateKey,
+            int256(1e18),
+            100e6,
+            pastTime,
+            0
+        );
 
         vm.prank(seller);
         vm.expectRevert(OPair.QuoteExpired.selector);
@@ -79,7 +95,15 @@ contract OPairTest is Setup {
         weth.approve(address(pair), tinySize);
         usdc.mint(address(funder), 1e6);
 
-        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, int256(uint256(tinySize)), 1e6, block.timestamp + 1, 0);
+        bytes memory sig = _signQuote(
+            address(funder),
+            address(pair),
+            mmPrivateKey,
+            int256(uint256(tinySize)),
+            1e6,
+            block.timestamp + 1,
+            0
+        );
 
         vm.prank(seller);
         vm.expectRevert(OPair.BelowMinDeposit.selector);
@@ -96,7 +120,15 @@ contract OPairTest is Setup {
         weth.approve(address(pair), size);
         usdc.mint(address(funder), premium);
 
-        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, int256(uint256(size)), premium, validTill, 0);
+        bytes memory sig = _signQuote(
+            address(funder),
+            address(pair),
+            mmPrivateKey,
+            int256(uint256(size)),
+            premium,
+            validTill,
+            0
+        );
 
         vm.prank(seller);
         vm.expectEmit(true, true, false, true);
@@ -134,7 +166,15 @@ contract OPairTest is Setup {
         vm.prank(buyer);
         usdc.approve(address(pair), 100e6);
 
-        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, -int256(1e18), 1e18, expiryTimestamp + 1, 0);
+        bytes memory sig = _signQuote(
+            address(funder),
+            address(pair),
+            mmPrivateKey,
+            -int256(1e18),
+            1e18,
+            expiryTimestamp + 1,
+            0
+        );
 
         vm.prank(buyer);
         vm.expectRevert(OPair.DepositWindowClosed.selector);
@@ -159,7 +199,15 @@ contract OPairTest is Setup {
         weth.mint(address(funder), depositAmt);
 
         // mm is seller → negative size
-        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, -int256(uint256(size)), premium, validTill, 0);
+        bytes memory sig = _signQuote(
+            address(funder),
+            address(pair),
+            mmPrivateKey,
+            -int256(uint256(size)),
+            premium,
+            validTill,
+            0
+        );
 
         vm.prank(buyer);
         vm.expectEmit(true, true, false, true);
@@ -282,7 +330,10 @@ contract OPairTest is Setup {
         uint256 usdcBefore = usdc.balanceOf(seller);
         vm.prank(seller);
         pair.claim(1e18, false);
-        assertEq(usdc.balanceOf(seller) - usdcBefore, (uint256(1e18) * STRIKE) / 1e18);
+        assertEq(
+            usdc.balanceOf(seller) - usdcBefore,
+            (uint256(1e18) * STRIKE) / 1e18
+        );
     }
 
     function test_claim_revertsBeforeExpiry() public {
@@ -380,8 +431,8 @@ contract OPairTest is Setup {
     // setDepositDeadline
     // =========================================================================
 
-    function test_depositDeadline_defaultIs24HoursBeforeExpiry() public view {
-        assertEq(pair.depositDeadline(), expiryTimestamp - 24 hours);
+    function test_depositDeadline_defaultIs3HoursBeforeExpiry() public view {
+        assertEq(pair.depositDeadline(), expiryTimestamp - 3 hours);
     }
 
     function test_setDepositDeadline_factoryOwnerCanSet() public {
@@ -483,6 +534,21 @@ contract OPairTest is Setup {
         pair.setExerciseEarliest(block.timestamp + 8 hours);
     }
 
+    function test_setExerciseEarliest_revertsWindowTooNarrow() public {
+        // Any value within 3 hours of expiry must be rejected.
+        uint256 tooLate = expiryTimestamp - 2 hours;
+        vm.prank(admin);
+        vm.expectRevert(OPair.ExerciseWindowTooNarrow.selector);
+        pair.setExerciseEarliest(tooLate);
+    }
+
+    function test_setExerciseEarliest_exactlyThreeHoursBeforeExpiryAllowed() public {
+        uint256 boundary = expiryTimestamp - 3 hours;
+        vm.prank(admin);
+        pair.setExerciseEarliest(boundary);
+        assertEq(pair.exerciseEarliest(), boundary);
+    }
+
     function test_exercise_revertsAfterAdminExtendsDelay() public {
         _doSell(pair, seller, 1e18, 100e6);
         _fundCallbackForExercise(pair, 1e18);
@@ -530,10 +596,18 @@ contract OPairTest is Setup {
         OPair pair2;
         {
             vm.prank(admin);
-            pair2 = OPair(factory.createPair(
-                address(weth), address(usdc), STRIKE, expiryTimestamp + 1 days,
-                true, MIN_DEPOSIT, "P2", "P2"
-            ));
+            pair2 = OPair(
+                factory.createPair(
+                    address(weth),
+                    address(usdc),
+                    STRIKE,
+                    expiryTimestamp + 1 days,
+                    true,
+                    MIN_DEPOSIT,
+                    "P2",
+                    "P2"
+                )
+            );
         }
 
         // mm goes short 1 ETH in pair2 via buyer calling buy
@@ -549,7 +623,15 @@ contract OPairTest is Setup {
 
         uint256 nonce = funder.nonces(mm, address(pair2));
         uint256 validTill = block.timestamp + 1 hours;
-        bytes memory sig = _signQuote(address(funder), address(pair2), mmPrivateKey, int256(1e18), 100e6, validTill, nonce);
+        bytes memory sig = _signQuote(
+            address(funder),
+            address(pair2),
+            mmPrivateKey,
+            int256(1e18),
+            100e6,
+            validTill,
+            nonce
+        );
 
         vm.prank(seller);
         pair2.sell(address(funder), mm, 1e18, 100e6, validTill, sig);
@@ -582,10 +664,25 @@ contract OPairTest is Setup {
 
         usdc.mint(address(funder), premium);
 
-        bytes memory sig = _signQuote(address(funder), address(putPair), mmPrivateKey, int256(uint256(size)), premium, block.timestamp + 1 hours, 0);
+        bytes memory sig = _signQuote(
+            address(funder),
+            address(putPair),
+            mmPrivateKey,
+            int256(uint256(size)),
+            premium,
+            block.timestamp + 1 hours,
+            0
+        );
 
         vm.prank(seller);
-        putPair.sell(address(funder), mm, size, premium, block.timestamp + 1 hours, sig);
+        putPair.sell(
+            address(funder),
+            mm,
+            size,
+            premium,
+            block.timestamp + 1 hours,
+            sig
+        );
 
         assertEq(putPair.netPosition(seller), -int256(uint256(size)));
         assertEq(putPair.netPosition(mm), int256(uint256(size)));
@@ -602,7 +699,10 @@ contract OPairTest is Setup {
 
         // For puts: depositToken=cashToken(USDC) sent to callback; swapToken=riskToken(WETH) received.
         // Pair collateral is USDC, so only WETH from exercise proceeds sits in the pair.
-        assertEq(usdc.balanceOf(address(callback)), (uint256(1e18) * STRIKE) / 1e18);
+        assertEq(
+            usdc.balanceOf(address(callback)),
+            (uint256(1e18) * STRIKE) / 1e18
+        );
         assertEq(weth.balanceOf(address(putPair)), 1e18); // only exercise proceeds (swap token)
     }
 }

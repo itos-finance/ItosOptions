@@ -2,14 +2,16 @@
 // Change Date: 2030-03-17  (license converts to GPL-2.0-or-later on this date)
 pragma solidity ^0.8.34;
 
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
-import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
+import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {
     IERC20Metadata
 } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {OPair} from "./OPair.sol";
 
-contract OPairFactory is Ownable2Step {
+contract OPairFactory is AccessControl {
+    /// @notice Role that may call createPair. Granted to the deployer by default.
+    bytes32 public constant ISSUER_ROLE = keccak256("ISSUER_ROLE");
+
     // All pairs deployed by this factory.
     mapping(address => bool) public isPair;
 
@@ -35,7 +37,10 @@ contract OPairFactory is Ownable2Step {
     error ExpiryInPast();
     error PairExists();
 
-    constructor() Ownable(msg.sender) {}
+    constructor() {
+        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
+        _grantRole(ISSUER_ROLE, msg.sender);
+    }
 
     function createPair(
         address riskToken,
@@ -46,7 +51,7 @@ contract OPairFactory is Ownable2Step {
         uint128 minDepositSize,
         string calldata identifier,
         string calldata symbol
-    ) external onlyOwner returns (address pair) {
+    ) external onlyRole(ISSUER_ROLE) returns (address pair) {
         if (riskToken == address(0) || cashToken == address(0))
             revert ZeroAddress();
         if (riskToken == cashToken) revert SameToken();

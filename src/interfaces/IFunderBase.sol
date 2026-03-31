@@ -53,9 +53,9 @@ interface IFunderBase {
     ) external;
 
     // --- Nonce management ---
-    /// @notice Advance the caller's own nonce for a vault, invalidating all prior signatures.
+    /// @notice Advance the caller's own nonce for `vault` by `amount`, invalidating all prior signatures.
     ///         Self-service: only msg.sender's nonce is affected.
-    function bumpNonce(address vault) external;
+    function bumpNonce(address vault, uint256 amount) external;
 
     event NonceBumped(
         address indexed signer,

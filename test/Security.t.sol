@@ -461,12 +461,12 @@ contract SecurityTest is Setup {
         bytes memory badSig = abi.encodePacked(r, s, v);
 
         vm.expectRevert(FundingVerifier.InvalidSignature.selector);
-        bulletin.postBid(address(pair), mm, address(funder), 0.1e18, int128(1e18), validTill, 0, badSig);
+        bulletin.post(address(pair), mm, address(funder), 0.1e18, int128(1e18), validTill, 0, badSig);
     }
 
     function test_bulletin_rejectsUnregisteredVault() public {
         bytes memory sig = hex"00";
         vm.expectRevert();
-        bulletin.postBid(address(0xdead), mm, address(funder), 100, int128(1e18), block.timestamp + 1, 0, sig);
+        bulletin.post(address(0xdead), mm, address(funder), 100, int128(1e18), block.timestamp + 1, 0, sig);
     }
 }

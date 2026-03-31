@@ -6,7 +6,9 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {
     SafeERC20
 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {
+    IAccessControl
+} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {
     ReentrancyGuardTransient
 } from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
@@ -122,10 +124,21 @@ contract OPair is ReentrancyGuardTransient {
     error NewExpiryNotLater();
     error DepositWindowClosed();
     error ExerciseTooEarly();
+    error ExerciseWindowTooNarrow();
 
     // -------------------------------------------------------------------------
     // Events
     // -------------------------------------------------------------------------
+    event NewOPair(
+        address indexed factory,
+        address indexed riskToken,
+        address indexed cashToken,
+        uint128 strike,
+        uint256 expiry,
+        bool isCall,
+        address longToken,
+        address shortToken
+    );
     event Sold(
         address indexed seller,
         address indexed buyer,
@@ -205,7 +218,8 @@ contract OPair is ReentrancyGuardTransient {
     // Modifiers
     // -------------------------------------------------------------------------
     modifier onlyFactoryOwner() {
-        if (msg.sender != Ownable(factory).owner()) revert NotFactoryOwner();
+        if (!IAccessControl(factory).hasRole(0x00, msg.sender))
+            revert NotFactoryOwner();
         _;
     }
 
@@ -246,11 +260,21 @@ contract OPair is ReentrancyGuardTransient {
         minDepositSize = _minDepositSize;
         depositToken = _isCall ? IERC20(_riskToken) : IERC20(_cashToken);
         swapToken = _isCall ? IERC20(_cashToken) : IERC20(_riskToken);
-        depositDeadline = _expiry - 24 hours;
+        depositDeadline = _expiry - 3 hours;
         exerciseEarliest = block.timestamp + 4 hours;
 
-        new OLongToken(identifier, symbol);
-        new OShortToken(identifier, symbol);
+        address long = address(new OLongToken(identifier, symbol));
+        address short = address(new OShortToken(identifier, symbol));
+        emit NewOPair(
+            factory,
+            _riskToken,
+            _cashToken,
+            _strike,
+            _expiry,
+            _isCall,
+            long,
+            short
+        );
     }
 
     // -------------------------------------------------------------------------
@@ -372,6 +396,8 @@ contract OPair is ReentrancyGuardTransient {
             address(cashToken),
             earnings
         );
+        // Custom funders for whatever reason might not use the full approval.
+        cashToken.forceApprove(sellerFunderAddr, 0);
 
         emit Bought(
             buyer,
@@ -509,7 +535,10 @@ contract OPair is ReentrancyGuardTransient {
         emit DepositDeadlineUpdated(newDeadline);
     }
 
-    function setExerciseEarliest(uint256 newEarliest) external onlyFactoryOwner {
+    function setExerciseEarliest(
+        uint256 newEarliest
+    ) external onlyFactoryOwner {
+        if (newEarliest > expiry - 3 hours) revert ExerciseWindowTooNarrow();
         exerciseEarliest = newEarliest;
         emit ExerciseEarliestUpdated(newEarliest);
     }

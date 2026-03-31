@@ -2,7 +2,7 @@
 pragma solidity ^0.8.34;
 
 import {Test} from "forge-std/Test.sol";
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {OPairFactory} from "../src/OPairFactory.sol";
 import {OPair} from "../src/OPair.sol";
 import {MockERC20} from "./mocks/MockERC20.sol";
@@ -12,6 +12,7 @@ contract OPairFactoryTest is Test {
     MockERC20 public weth;
     MockERC20 public usdc;
     address public admin;
+    address public issuer;
     address public stranger;
 
     uint128 constant STRIKE = 2000e18;
@@ -21,8 +22,13 @@ contract OPairFactoryTest is Test {
     string constant ID  = "WETH-USDC-2000";
     string constant SYM = "WETH";
 
+    // Cache roles as constants to avoid consuming vm.prank when used as call arguments.
+    bytes32 constant DEFAULT_ADMIN_ROLE = 0x00;
+    bytes32 constant ISSUER_ROLE = keccak256("ISSUER_ROLE");
+
     function setUp() public {
         admin    = makeAddr("admin");
+        issuer   = makeAddr("issuer");
         stranger = makeAddr("stranger");
         EXPIRY   = block.timestamp + 7 days;
 
@@ -42,13 +48,13 @@ contract OPairFactoryTest is Test {
         address pairAddr = factory.createPair(address(weth), address(usdc), STRIKE, EXPIRY, true, MIN_DEPOSIT, ID, SYM);
 
         OPair pair = OPair(pairAddr);
-        assertEq(address(pair.riskToken()),    address(weth));
-        assertEq(address(pair.cashToken()),    address(usdc));
-        assertEq(pair.strike(),        STRIKE);
-        assertEq(pair.expiry(),        EXPIRY);
+        assertEq(address(pair.riskToken()), address(weth));
+        assertEq(address(pair.cashToken()), address(usdc));
+        assertEq(pair.strike(),             STRIKE);
+        assertEq(pair.expiry(),             EXPIRY);
         assertTrue(pair.isCall());
-        assertEq(pair.minDepositSize(), MIN_DEPOSIT);
-        assertEq(pair.factory(),        address(factory));
+        assertEq(pair.minDepositSize(),     MIN_DEPOSIT);
+        assertEq(pair.factory(),            address(factory));
     }
 
     function test_createPair_registeredInIsPair() public {
@@ -126,39 +132,80 @@ contract OPairFactoryTest is Test {
         vm.stopPrank();
     }
 
-    function test_createPair_revertsNonOwner() public {
+    function test_createPair_revertsWithoutIssuerRole() public {
         vm.prank(stranger);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, stranger));
+        vm.expectRevert(abi.encodeWithSelector(
+            IAccessControl.AccessControlUnauthorizedAccount.selector,
+            stranger,
+            ISSUER_ROLE
+        ));
         factory.createPair(address(weth), address(usdc), STRIKE, EXPIRY, true, MIN_DEPOSIT, ID, SYM);
     }
 
     // =========================================================================
-    // Ownership (two-step)
+    // ISSUER_ROLE
     // =========================================================================
 
-    function test_ownerIsDeployer() public view {
-        assertEq(factory.owner(), admin);
+    function test_issuerRole_grantedToDeployer() public view {
+        assertTrue(factory.hasRole(ISSUER_ROLE, admin));
     }
 
-    function test_twoStepOwnershipTransfer() public {
-        address newOwner = makeAddr("newOwner");
-
+    function test_issuerRole_grantedAccountCanCreatePair() public {
         vm.prank(admin);
-        factory.transferOwnership(newOwner);
-        assertEq(factory.owner(), admin); // still admin until accepted
+        factory.grantRole(ISSUER_ROLE, issuer);
 
-        vm.prank(newOwner);
-        factory.acceptOwnership();
-        assertEq(factory.owner(), newOwner);
+        vm.prank(issuer);
+        address pairAddr = factory.createPair(address(weth), address(usdc), STRIKE, EXPIRY, true, MIN_DEPOSIT, ID, SYM);
+        assertTrue(factory.isPair(pairAddr));
     }
 
-    function test_pendingOwnerCannotActBeforeAccept() public {
-        address newOwner = makeAddr("newOwner");
-        vm.prank(admin);
-        factory.transferOwnership(newOwner);
+    function test_issuerRole_revokedAccountCannotCreatePair() public {
+        vm.startPrank(admin);
+        factory.grantRole(ISSUER_ROLE, issuer);
+        factory.revokeRole(ISSUER_ROLE, issuer);
+        vm.stopPrank();
 
-        vm.prank(newOwner);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, newOwner));
+        vm.prank(issuer);
+        vm.expectRevert(abi.encodeWithSelector(
+            IAccessControl.AccessControlUnauthorizedAccount.selector,
+            issuer,
+            ISSUER_ROLE
+        ));
         factory.createPair(address(weth), address(usdc), STRIKE, EXPIRY, true, MIN_DEPOSIT, ID, SYM);
+    }
+
+    function test_issuerRole_onlyAdminCanGrant() public {
+        vm.prank(stranger);
+        vm.expectRevert(abi.encodeWithSelector(
+            IAccessControl.AccessControlUnauthorizedAccount.selector,
+            stranger,
+            DEFAULT_ADMIN_ROLE
+        ));
+        factory.grantRole(ISSUER_ROLE, issuer);
+    }
+
+    // =========================================================================
+    // DEFAULT_ADMIN_ROLE
+    // =========================================================================
+
+    function test_adminRoleGrantedToDeployer() public view {
+        assertTrue(factory.hasRole(DEFAULT_ADMIN_ROLE, admin));
+    }
+
+    function test_adminRole_canTransferViaGrantAndRevoke() public {
+        address newAdmin = makeAddr("newAdmin");
+
+        vm.startPrank(admin);
+        factory.grantRole(DEFAULT_ADMIN_ROLE, newAdmin);
+        factory.revokeRole(DEFAULT_ADMIN_ROLE, admin);
+        vm.stopPrank();
+
+        assertFalse(factory.hasRole(DEFAULT_ADMIN_ROLE, admin));
+        assertTrue(factory.hasRole(DEFAULT_ADMIN_ROLE, newAdmin));
+
+        // New admin can grant roles
+        vm.prank(newAdmin);
+        factory.grantRole(ISSUER_ROLE, issuer);
+        assertTrue(factory.hasRole(ISSUER_ROLE, issuer));
     }
 }

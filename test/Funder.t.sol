@@ -312,6 +312,86 @@ contract FunderTest is Setup {
         funder.requestFunds(mm, address(usdc), 100e6, int256(1e18), 100e6, block.timestamp + 1 hours, hex"0011");
     }
 
+    // =========================================================================
+    // bumpNonce
+    // =========================================================================
+
+    function test_bumpNonce_invalidatesPriorSignature() public {
+        uint128 size = 1e18;
+        uint128 premium = 100e6;
+        uint256 validTill = block.timestamp + 1 hours;
+        int256 signedSize = int256(uint256(size));
+        usdc.mint(address(funder), premium);
+
+        // Sig valid at nonce 0
+        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, signedSize, premium, validTill, 0);
+
+        vm.prank(mm);
+        funder.bumpNonce(address(pair), 1);
+        assertEq(funder.nonces(mm, address(pair)), 1);
+
+        // Nonce-0 sig now rejected
+        vm.prank(address(pair));
+        vm.expectRevert(FundingVerifier.InvalidSignature.selector);
+        funder.requestFunds(mm, address(usdc), premium, signedSize, premium, validTill, sig);
+    }
+
+    function test_bumpNonce_skipMultiple_onlyNewNonceWorks() public {
+        uint128 size = 1e18;
+        uint128 premium = 50e6;
+        uint256 validTill = block.timestamp + 1 hours;
+        int256 signedSize = int256(uint256(size));
+        usdc.mint(address(funder), premium);
+
+        // Pre-sign at nonces 0, 1, and 5
+        bytes memory sig0 = _signQuote(address(funder), address(pair), mmPrivateKey, signedSize, premium, validTill, 0);
+        bytes memory sig1 = _signQuote(address(funder), address(pair), mmPrivateKey, signedSize, premium, validTill, 1);
+        bytes memory sig5 = _signQuote(address(funder), address(pair), mmPrivateKey, signedSize, premium, validTill, 5);
+
+        vm.prank(mm);
+        funder.bumpNonce(address(pair), 5);
+        assertEq(funder.nonces(mm, address(pair)), 5);
+
+        // Nonces 0 and 1 are both skipped — rejected
+        vm.prank(address(pair));
+        vm.expectRevert(FundingVerifier.InvalidSignature.selector);
+        funder.requestFunds(mm, address(usdc), premium, signedSize, premium, validTill, sig0);
+
+        vm.prank(address(pair));
+        vm.expectRevert(FundingVerifier.InvalidSignature.selector);
+        funder.requestFunds(mm, address(usdc), premium, signedSize, premium, validTill, sig1);
+
+        // Nonce 5 is current — succeeds
+        vm.prank(address(pair));
+        funder.requestFunds(mm, address(usdc), premium, signedSize, premium, validTill, sig5);
+        assertEq(funder.nonces(mm, address(pair)), 6);
+    }
+
+    function test_bumpNonce_byZero_doesNothing() public {
+        uint128 size = 1e18;
+        uint128 premium = 100e6;
+        uint256 validTill = block.timestamp + 1 hours;
+        int256 signedSize = int256(uint256(size));
+        usdc.mint(address(funder), premium);
+
+        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, signedSize, premium, validTill, 0);
+
+        vm.prank(mm);
+        funder.bumpNonce(address(pair), 0);
+        assertEq(funder.nonces(mm, address(pair)), 0);
+
+        // Nonce-0 sig still valid
+        vm.prank(address(pair));
+        funder.requestFunds(mm, address(usdc), premium, signedSize, premium, validTill, sig);
+        assertEq(funder.nonces(mm, address(pair)), 1);
+    }
+
+    function test_bumpNonce_revertsUnauthorized() public {
+        vm.prank(seller); // neither owner nor authorized signer
+        vm.expectRevert(IFunder.NotAuthorizedSigner.selector);
+        funder.bumpNonce(address(pair), 1);
+    }
+
     function test_requestFunds_emitsEvent() public {
         uint128 size = 1e18;
         uint128 premium = 100e6;
