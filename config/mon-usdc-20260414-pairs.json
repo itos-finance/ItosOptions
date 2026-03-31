@@ -1,0 +1,46 @@
+{
+  "description": "MON/USDC options vaults — generated 2026-03-31, spot $0.022, step 3, divisor 1000",
+  "underlying_symbol": "MON",
+  "cash_symbol": "USDC",
+  "risk_token": "0xCE2D34Cf2677e03cAd3c62EC0daF03f26c611067",
+  "cash_token": "0x9fAf34ddCF9D26b6e5f12482C2942c28f207B7B7",
+  "risk_decimals": 18,
+  "cash_decimals": 6,
+  "min_deposit_size": "10000000000000000",
+  "expiry": 1776124800,
+  "strike_divisor": 1000,
+  "pairs": [
+    {
+      "strike_usd": 9,
+      "is_call": false
+    },
+    {
+      "strike_usd": 12,
+      "is_call": false
+    },
+    {
+      "strike_usd": 15,
+      "is_call": false
+    },
+    {
+      "strike_usd": 18,
+      "is_call": false
+    },
+    {
+      "strike_usd": 24,
+      "is_call": true
+    },
+    {
+      "strike_usd": 27,
+      "is_call": true
+    },
+    {
+      "strike_usd": 30,
+      "is_call": true
+    },
+    {
+      "strike_usd": 33,
+      "is_call": true
+    }
+  ]
+}
