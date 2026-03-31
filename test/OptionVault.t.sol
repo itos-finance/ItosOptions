@@ -448,6 +448,16 @@ contract OPairTest is Setup {
         pair.setDepositDeadline(expiryTimestamp - 1 hours);
     }
 
+    function test_setDepositDeadline_revertsAtOrPastExpiry() public {
+        vm.startPrank(admin);
+        vm.expectRevert(OPair.DepositDeadlinePastExpiry.selector);
+        pair.setDepositDeadline(expiryTimestamp); // equal to expiry
+
+        vm.expectRevert(OPair.DepositDeadlinePastExpiry.selector);
+        pair.setDepositDeadline(expiryTimestamp + 1 days); // after expiry
+        vm.stopPrank();
+    }
+
     function test_exercise_allowedAfterDepositDeadline() public {
         // Create a position before the deposit deadline
         _doSell(pair, seller, 1e18, 100e6);

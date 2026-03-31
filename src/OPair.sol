@@ -125,6 +125,8 @@ contract OPair is ReentrancyGuardTransient {
     error DepositWindowClosed();
     error ExerciseTooEarly();
     error ExerciseWindowTooNarrow();
+    error DepositDeadlinePastExpiry();
+    error ExpiryTooSoon();
 
     // -------------------------------------------------------------------------
     // Events
@@ -261,6 +263,7 @@ contract OPair is ReentrancyGuardTransient {
         depositToken = _isCall ? IERC20(_riskToken) : IERC20(_cashToken);
         swapToken = _isCall ? IERC20(_cashToken) : IERC20(_riskToken);
         depositDeadline = _expiry - 3 hours;
+        require(block.timestamp + 1 hours < depositDeadline, ExpiryTooSoon());
         exerciseEarliest = block.timestamp + 4 hours;
 
         address long = address(new OLongToken(identifier, symbol));
@@ -531,6 +534,7 @@ contract OPair is ReentrancyGuardTransient {
     }
 
     function setDepositDeadline(uint256 newDeadline) external onlyFactoryOwner {
+        if (newDeadline >= expiry) revert DepositDeadlinePastExpiry();
         depositDeadline = newDeadline;
         emit DepositDeadlineUpdated(newDeadline);
     }
