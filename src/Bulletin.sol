@@ -6,19 +6,18 @@ import {FundingVerifier} from "./FundingVerifier.sol";
 import {IBulletin} from "./interfaces/IBulletin.sol";
 
 /// @title Bulletin
-/// @notice On-chain order book for OPair bids and offers. Inherits FundingVerifier so that
+/// @notice On-chain order book for OPair orders. Inherits FundingVerifier so that
 ///         the EIP-712 signing procedure is identical to the one used in requestFunds — a
 ///         signature posted here can be passed directly to OPair.sell / OPair.buy.
 ///
-///         The caller supplies the nonce the signature was made for, so orders can be posted
-///         for any nonce — including a future one (e.g. preemptively queuing a bid to become
-///         active after an existing offer executes and increments the nonce).
+///         Size sign encodes intent: positive = bid (buy), negative = offer (sell).
+///         Orders are stored at (vault, signer, nonce), so a signer can queue orders
+///         at future nonces without invalidating earlier ones.
 ///
 /// @dev Fund availability is verified off-chain before posting. No on-chain reservation.
 contract Bulletin is IBulletin, FundingVerifier {
-    // vault → poster → Order
-    mapping(address => mapping(address => Order)) private _bids;
-    mapping(address => mapping(address => Order)) private _offers;
+    // vault → signer → nonce → Order
+    mapping(address => mapping(address => mapping(uint256 => Order))) private _orders;
 
     constructor(address _factory) FundingVerifier(_factory) {}
 
@@ -27,7 +26,7 @@ contract Bulletin is IBulletin, FundingVerifier {
     // ------------------------------------------------------------------ //
 
     /// @inheritdoc IBulletin
-    function postBid(
+    function post(
         address vault,
         address signer,
         address funder,
@@ -37,6 +36,7 @@ contract Bulletin is IBulletin, FundingVerifier {
         uint256 nonce,
         bytes calldata signature
     ) external {
+        if (size == 0) revert ZeroSize();
         if (!factory.isVault(vault)) revert VaultNotFromFactory();
         if (
             signer !=
@@ -51,7 +51,7 @@ contract Bulletin is IBulletin, FundingVerifier {
             )
         ) revert InvalidSignature();
 
-        _bids[vault][signer] = Order({
+        _orders[vault][signer][nonce] = Order({
             funder: funder,
             signer: signer,
             premium: premium,
@@ -61,45 +61,7 @@ contract Bulletin is IBulletin, FundingVerifier {
             signature: signature
         });
 
-        emit BidPosted(vault, signer, _bids[vault][signer]);
-    }
-
-    /// @inheritdoc IBulletin
-    function postOffer(
-        address vault,
-        address signer,
-        address funder,
-        uint128 premium,
-        int128 size,
-        uint256 validTillTimestamp,
-        uint256 nonce,
-        bytes calldata signature
-    ) external {
-        if (!factory.isVault(vault)) revert VaultNotFromFactory();
-        if (
-            signer !=
-            _recoverSigner(
-                funder,
-                vault,
-                int256(size),
-                premium,
-                validTillTimestamp,
-                nonce,
-                signature
-            )
-        ) revert InvalidSignature();
-
-        _offers[vault][signer] = Order({
-            funder: funder,
-            signer: signer,
-            premium: premium,
-            size: size,
-            validTillTimestamp: validTillTimestamp,
-            nonce: nonce,
-            signature: signature
-        });
-
-        emit OfferPosted(vault, signer, _offers[vault][signer]);
+        emit OrderPosted(vault, signer, _orders[vault][signer][nonce]);
     }
 
     // ------------------------------------------------------------------ //
@@ -107,18 +69,11 @@ contract Bulletin is IBulletin, FundingVerifier {
     // ------------------------------------------------------------------ //
 
     /// @inheritdoc IBulletin
-    function getBid(
+    function getOrder(
         address vault,
-        address poster
+        address signer,
+        uint256 nonce
     ) external view returns (Order memory) {
-        return _bids[vault][poster];
-    }
-
-    /// @inheritdoc IBulletin
-    function getOffer(
-        address vault,
-        address poster
-    ) external view returns (Order memory) {
-        return _offers[vault][poster];
+        return _orders[vault][signer][nonce];
     }
 }

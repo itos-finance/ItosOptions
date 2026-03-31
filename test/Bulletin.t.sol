@@ -11,8 +11,9 @@ import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 contract BulletinTest is Setup {
     OPair public pair;
 
-    uint128 constant PREMIUM   = 0.5e18; // total premium for the entire size
-    int128  constant SIZE      = 5e18;  // positive = buy intent
+    uint128 constant PREMIUM  = 0.5e18; // total premium for the entire size
+    int128  constant BID_SIZE = 5e18;   // positive = buy intent
+    int128  constant OFFER_SIZE = -5e18; // negative = sell intent
 
     function setUp() public override {
         super.setUp();
@@ -20,10 +21,9 @@ contract BulletinTest is Setup {
     }
 
     // =========================================================================
-    // Signing helper — uses _signQuote from Setup which now signs total premium
+    // Signing helper
     // =========================================================================
 
-    /// @dev Convenience wrapper: sign a quote for bulletin posting.
     function _signBulletinQuote(
         address funderAddr,
         address vaultAddr,
@@ -39,165 +39,170 @@ contract BulletinTest is Setup {
     }
 
     // =========================================================================
-    // postBid
+    // post — bids (positive size)
     // =========================================================================
 
-    function test_postBid_storesOrder() public {
+    function test_post_bid_storesOrder() public {
         uint256 validTill = block.timestamp + 1 hours;
-        bytes memory sig = _signBulletinQuote(address(funder), address(pair), mmPrivateKey, SIZE, PREMIUM, validTill, 0);
+        bytes memory sig = _signBulletinQuote(address(funder), address(pair), mmPrivateKey, BID_SIZE, PREMIUM, validTill, 0);
 
-        bulletin.postBid(address(pair), mm, address(funder), PREMIUM, SIZE, validTill, 0, sig);
+        bulletin.post(address(pair), mm, address(funder), PREMIUM, BID_SIZE, validTill, 0, sig);
 
-        IBulletin.Order memory order = bulletin.getBid(address(pair), mm);
+        IBulletin.Order memory order = bulletin.getOrder(address(pair), mm, 0);
         assertEq(order.funder,             address(funder));
         assertEq(order.signer,             mm);
-        assertEq(order.premium,     PREMIUM);
-        assertEq(order.size,               SIZE);
+        assertEq(order.premium,            PREMIUM);
+        assertEq(order.size,               BID_SIZE);
         assertEq(order.validTillTimestamp, validTill);
         assertEq(order.nonce,              0);
         assertEq(order.signature,          sig);
     }
 
-    function test_postBid_anyoneCanPostValidSignature() public {
-        // A third party (not mm) can post mm's valid signature
+    function test_post_bid_anyoneCanPostValidSignature() public {
         uint256 validTill = block.timestamp + 1 hours;
-        bytes memory sig = _signBulletinQuote(address(funder), address(pair), mmPrivateKey, SIZE, PREMIUM, validTill, 0);
+        bytes memory sig = _signBulletinQuote(address(funder), address(pair), mmPrivateKey, BID_SIZE, PREMIUM, validTill, 0);
 
-        vm.prank(seller); // seller posts on behalf of mm
-        bulletin.postBid(address(pair), mm, address(funder), PREMIUM, SIZE, validTill, 0, sig);
+        vm.prank(seller); // third party posts on behalf of mm
+        bulletin.post(address(pair), mm, address(funder), PREMIUM, BID_SIZE, validTill, 0, sig);
 
-        IBulletin.Order memory order = bulletin.getBid(address(pair), mm);
-        assertEq(order.signer, mm);
+        assertEq(bulletin.getOrder(address(pair), mm, 0).signer, mm);
     }
 
-    function test_postBid_replacesExistingBid() public {
+    function test_post_replacesOrderAtSameNonce() public {
         uint256 validTill = block.timestamp + 1 hours;
-        bytes memory sig1 = _signBulletinQuote(address(funder), address(pair), mmPrivateKey, SIZE, PREMIUM, validTill, 0);
-        bulletin.postBid(address(pair), mm, address(funder), PREMIUM, SIZE, validTill, 0, sig1);
+        bytes memory sig1 = _signBulletinQuote(address(funder), address(pair), mmPrivateKey, BID_SIZE, PREMIUM, validTill, 0);
+        bulletin.post(address(pair), mm, address(funder), PREMIUM, BID_SIZE, validTill, 0, sig1);
 
-        // Post again with different size
-        int128 newSize = SIZE * 2;
+        // Post a new bid at the same nonce — overwrites
+        int128 newSize = BID_SIZE * 2;
         bytes memory sig2 = _signBulletinQuote(address(funder), address(pair), mmPrivateKey, newSize, PREMIUM, validTill, 0);
-        bulletin.postBid(address(pair), mm, address(funder), PREMIUM, newSize, validTill, 0, sig2);
+        bulletin.post(address(pair), mm, address(funder), PREMIUM, newSize, validTill, 0, sig2);
 
-        IBulletin.Order memory order = bulletin.getBid(address(pair), mm);
-        assertEq(order.size, newSize);
+        assertEq(bulletin.getOrder(address(pair), mm, 0).size, newSize);
     }
 
-    function test_postBid_futureNonce() public {
-        // Can post a bid for nonce 5 even though current nonce is 0
+    function test_post_futureNonce() public {
+        // Can post for nonce 5 even though the current Funder nonce is 0
         uint256 validTill = block.timestamp + 1 hours;
-        bytes memory sig = _signBulletinQuote(address(funder), address(pair), mmPrivateKey, SIZE, PREMIUM, validTill, 5);
+        bytes memory sig = _signBulletinQuote(address(funder), address(pair), mmPrivateKey, BID_SIZE, PREMIUM, validTill, 5);
 
-        bulletin.postBid(address(pair), mm, address(funder), PREMIUM, SIZE, validTill, 5, sig);
+        bulletin.post(address(pair), mm, address(funder), PREMIUM, BID_SIZE, validTill, 5, sig);
 
-        IBulletin.Order memory order = bulletin.getBid(address(pair), mm);
-        assertEq(order.nonce, 5);
+        assertEq(bulletin.getOrder(address(pair), mm, 5).nonce, 5);
     }
 
-    function test_postBid_revertsVaultNotFromFactory() public {
+    // =========================================================================
+    // post — offers (negative size)
+    // =========================================================================
+
+    function test_post_offer_storesOrder() public {
         uint256 validTill = block.timestamp + 1 hours;
-        bytes memory sig = _signBulletinQuote(address(funder), address(0xdead), mmPrivateKey, SIZE, PREMIUM, validTill, 0);
+        bytes memory sig = _signBulletinQuote(address(funder), address(pair), mmPrivateKey, OFFER_SIZE, PREMIUM, validTill, 0);
+
+        bulletin.post(address(pair), mm, address(funder), PREMIUM, OFFER_SIZE, validTill, 0, sig);
+
+        IBulletin.Order memory order = bulletin.getOrder(address(pair), mm, 0);
+        assertEq(order.funder,   address(funder));
+        assertEq(order.signer,   mm);
+        assertEq(order.premium,  PREMIUM);
+        assertEq(order.size,     OFFER_SIZE);
+        assertEq(order.nonce,    0);
+    }
+
+    function test_post_offer_anyoneCanPostValidSignature() public {
+        uint256 validTill = block.timestamp + 1 hours;
+        bytes memory sig = _signBulletinQuote(address(funder), address(pair), mmPrivateKey, OFFER_SIZE, PREMIUM, validTill, 0);
+
+        vm.prank(buyer); // third party posts mm's offer
+        bulletin.post(address(pair), mm, address(funder), PREMIUM, OFFER_SIZE, validTill, 0, sig);
+
+        assertEq(bulletin.getOrder(address(pair), mm, 0).signer, mm);
+    }
+
+    // =========================================================================
+    // Multiple nonces coexist
+    // =========================================================================
+
+    function test_post_differentNoncesCoexist() public {
+        uint256 validTill = block.timestamp + 1 hours;
+
+        // Bid at nonce 0
+        bytes memory bidSig = _signBulletinQuote(address(funder), address(pair), mmPrivateKey, BID_SIZE, PREMIUM, validTill, 0);
+        bulletin.post(address(pair), mm, address(funder), PREMIUM, BID_SIZE, validTill, 0, bidSig);
+
+        // Offer at nonce 1 — stored independently
+        bytes memory offerSig = _signBulletinQuote(address(funder), address(pair), mmPrivateKey, OFFER_SIZE, PREMIUM, validTill, 1);
+        bulletin.post(address(pair), mm, address(funder), PREMIUM, OFFER_SIZE, validTill, 1, offerSig);
+
+        assertEq(bulletin.getOrder(address(pair), mm, 0).size, BID_SIZE);
+        assertEq(bulletin.getOrder(address(pair), mm, 1).size, OFFER_SIZE);
+    }
+
+    // =========================================================================
+    // Revert cases
+    // =========================================================================
+
+    function test_post_revertsZeroSize() public {
+        uint256 validTill = block.timestamp + 1 hours;
+        bytes memory sig = _signBulletinQuote(address(funder), address(pair), mmPrivateKey, 0, PREMIUM, validTill, 0);
+
+        vm.expectRevert(IBulletin.ZeroSize.selector);
+        bulletin.post(address(pair), mm, address(funder), PREMIUM, 0, validTill, 0, sig);
+    }
+
+    function test_post_revertsVaultNotFromFactory() public {
+        uint256 validTill = block.timestamp + 1 hours;
+        bytes memory sig = _signBulletinQuote(address(funder), address(0xdead), mmPrivateKey, BID_SIZE, PREMIUM, validTill, 0);
 
         vm.expectRevert(IBulletin.VaultNotFromFactory.selector);
-        bulletin.postBid(address(0xdead), mm, address(funder), PREMIUM, SIZE, validTill, 0, sig);
+        bulletin.post(address(0xdead), mm, address(funder), PREMIUM, BID_SIZE, validTill, 0, sig);
     }
 
-    function test_postBid_revertsInvalidSignature() public {
+    function test_post_revertsInvalidSignature() public {
         uint256 validTill = block.timestamp + 1 hours;
-        // Sign with a different key than the declared signer (mm)
-        bytes memory badSig = _signBulletinQuote(address(funder), address(pair), 0xDEAD, SIZE, PREMIUM, validTill, 0);
+        bytes memory badSig = _signBulletinQuote(address(funder), address(pair), 0xDEAD, BID_SIZE, PREMIUM, validTill, 0);
 
         vm.expectRevert(FundingVerifier.InvalidSignature.selector);
-        bulletin.postBid(address(pair), mm, address(funder), PREMIUM, SIZE, validTill, 0, badSig);
+        bulletin.post(address(pair), mm, address(funder), PREMIUM, BID_SIZE, validTill, 0, badSig);
     }
 
-    function test_postBid_revertsWrongFunderInSig() public {
-        // Sig commits to funderAddr=funder, but we claim funderAddr=0xdead
+    function test_post_revertsWrongFunderInSig() public {
         uint256 validTill = block.timestamp + 1 hours;
-        bytes memory sig = _signBulletinQuote(address(funder), address(pair), mmPrivateKey, SIZE, PREMIUM, validTill, 0);
+        bytes memory sig = _signBulletinQuote(address(funder), address(pair), mmPrivateKey, BID_SIZE, PREMIUM, validTill, 0);
 
         vm.expectRevert(FundingVerifier.InvalidSignature.selector);
-        // Pass address(0xdead) as the funder — sig won't match
-        bulletin.postBid(address(pair), mm, address(0xdead), PREMIUM, SIZE, validTill, 0, sig);
+        bulletin.post(address(pair), mm, address(0xdead), PREMIUM, BID_SIZE, validTill, 0, sig);
     }
 
-    function test_postBid_emitsEvent() public {
+    // =========================================================================
+    // Events
+    // =========================================================================
+
+    function test_post_emitsOrderPosted_bid() public {
         uint256 validTill = block.timestamp + 1 hours;
-        bytes memory sig = _signBulletinQuote(address(funder), address(pair), mmPrivateKey, SIZE, PREMIUM, validTill, 0);
+        bytes memory sig = _signBulletinQuote(address(funder), address(pair), mmPrivateKey, BID_SIZE, PREMIUM, validTill, 0);
 
         vm.expectEmit(true, true, false, false);
-        emit IBulletin.BidPosted(address(pair), mm, IBulletin.Order(address(funder), mm, PREMIUM, SIZE, validTill, 0, sig));
-        bulletin.postBid(address(pair), mm, address(funder), PREMIUM, SIZE, validTill, 0, sig);
+        emit IBulletin.OrderPosted(address(pair), mm, IBulletin.Order(address(funder), mm, PREMIUM, BID_SIZE, validTill, 0, sig));
+        bulletin.post(address(pair), mm, address(funder), PREMIUM, BID_SIZE, validTill, 0, sig);
     }
 
-    // =========================================================================
-    // postOffer
-    // =========================================================================
-
-    function test_postOffer_storesOrder() public {
+    function test_post_emitsOrderPosted_offer() public {
         uint256 validTill = block.timestamp + 1 hours;
-        bytes memory sig = _signBulletinQuote(address(funder), address(pair), mmPrivateKey, SIZE, PREMIUM, validTill, 0);
-
-        bulletin.postOffer(address(pair), mm, address(funder), PREMIUM, SIZE, validTill, 0, sig);
-
-        IBulletin.Order memory order = bulletin.getOffer(address(pair), mm);
-        assertEq(order.funder,         address(funder));
-        assertEq(order.signer,         mm);
-        assertEq(order.premium, PREMIUM);
-        assertEq(order.size,           SIZE);
-        assertEq(order.nonce,          0);
-    }
-
-    function test_postOffer_anyoneCanPostValidSignature() public {
-        uint256 validTill = block.timestamp + 1 hours;
-        bytes memory sig = _signBulletinQuote(address(funder), address(pair), mmPrivateKey, SIZE, PREMIUM, validTill, 0);
-
-        vm.prank(buyer); // buyer posts mm's offer
-        bulletin.postOffer(address(pair), mm, address(funder), PREMIUM, SIZE, validTill, 0, sig);
-
-        assertEq(bulletin.getOffer(address(pair), mm).signer, mm);
-    }
-
-    function test_postOffer_revertsInvalidSignature() public {
-        uint256 validTill = block.timestamp + 1 hours;
-        bytes memory badSig = _signBulletinQuote(address(funder), address(pair), 0xDEAD, SIZE, PREMIUM, validTill, 0);
-
-        vm.expectRevert(FundingVerifier.InvalidSignature.selector);
-        bulletin.postOffer(address(pair), mm, address(funder), PREMIUM, SIZE, validTill, 0, badSig);
-    }
-
-    function test_postOffer_emitsEvent() public {
-        uint256 validTill = block.timestamp + 1 hours;
-        bytes memory sig = _signBulletinQuote(address(funder), address(pair), mmPrivateKey, SIZE, PREMIUM, validTill, 0);
+        bytes memory sig = _signBulletinQuote(address(funder), address(pair), mmPrivateKey, OFFER_SIZE, PREMIUM, validTill, 0);
 
         vm.expectEmit(true, true, false, false);
-        emit IBulletin.OfferPosted(address(pair), mm, IBulletin.Order(address(funder), mm, PREMIUM, SIZE, validTill, 0, sig));
-        bulletin.postOffer(address(pair), mm, address(funder), PREMIUM, SIZE, validTill, 0, sig);
+        emit IBulletin.OrderPosted(address(pair), mm, IBulletin.Order(address(funder), mm, PREMIUM, OFFER_SIZE, validTill, 0, sig));
+        bulletin.post(address(pair), mm, address(funder), PREMIUM, OFFER_SIZE, validTill, 0, sig);
     }
 
     // =========================================================================
-    // getBid / getOffer (views)
+    // getOrder (view)
     // =========================================================================
 
-    function test_getBid_returnsZeroStructWhenEmpty() public view {
-        IBulletin.Order memory order = bulletin.getBid(address(pair), mm);
-        assertEq(order.size, 0);
+    function test_getOrder_returnsZeroStructWhenEmpty() public view {
+        IBulletin.Order memory order = bulletin.getOrder(address(pair), mm, 0);
+        assertEq(order.size,   0);
         assertEq(order.funder, address(0));
-    }
-
-    function test_getOffer_returnsZeroStructWhenEmpty() public view {
-        IBulletin.Order memory order = bulletin.getOffer(address(pair), mm);
-        assertEq(order.size, 0);
-    }
-
-    function test_bidsAndOffersAreIndependent() public {
-        uint256 validTill = block.timestamp + 1 hours;
-        bytes memory sig = _signBulletinQuote(address(funder), address(pair), mmPrivateKey, SIZE, PREMIUM, validTill, 0);
-        bulletin.postBid(address(pair), mm, address(funder), PREMIUM, SIZE, validTill, 0, sig);
-
-        // offer is still empty
-        assertEq(bulletin.getOffer(address(pair), mm).size, 0);
-        assertEq(bulletin.getBid(address(pair), mm).size, SIZE);
     }
 }
