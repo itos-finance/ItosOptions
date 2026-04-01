@@ -27,6 +27,7 @@ interface IOPair {
     error ExerciseWindowTooNarrow();
     error DepositDeadlinePastExpiry();
     error ExpiryTooSoon();
+    error FillExceedsQuotedSize();
 
     // -------------------------------------------------------------------------
     // Events
@@ -104,7 +105,8 @@ interface IOPair {
         address funderAddr,
         address buyerSigner,
         uint128 size,
-        uint128 premium,
+        uint128 fill,
+        uint128 premiumPerUnit,
         uint256 validTillTimestamp,
         bytes calldata signature
     ) external;
@@ -113,7 +115,8 @@ interface IOPair {
         address sellerFunderAddr,
         address sellerSigner,
         uint128 size,
-        uint128 premium,
+        uint128 fill,
+        uint128 premiumPerUnit,
         uint256 validTillTimestamp,
         bytes calldata signature
     ) external;

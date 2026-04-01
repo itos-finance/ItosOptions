@@ -90,7 +90,7 @@ abstract contract Setup is Test {
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
 
     bytes32 private constant _QUOTE_TYPEHASH =
-        keccak256("Quote(address funder,int256 size,address vault,uint256 premium,uint256 validTillTimestamp,uint256 nonce)");
+        keccak256("Quote(address funder,int256 size,address vault,uint256 premiumPerUnit,uint256 validTillTimestamp,uint256 nonce)");
 
     /// @dev Build an EIP-712 digest matching OPair._verifyAndConsumeQuote.
     ///      The verifyingContract is the vault (OPair), not the funder.
@@ -99,7 +99,7 @@ abstract contract Setup is Test {
         address funderAddr,
         address vaultAddr,
         int256 size,
-        uint256 premium,
+        uint256 premiumPerUnit,
         uint256 validTill,
         uint256 nonce
     ) internal view returns (bytes32) {
@@ -115,7 +115,7 @@ abstract contract Setup is Test {
             funderAddr,
             size,
             vaultAddr,
-            premium,
+            premiumPerUnit,
             validTill,
             nonce
         ));
@@ -124,16 +124,17 @@ abstract contract Setup is Test {
 
     /// @dev Sign a quote with an arbitrary private key.
     ///      Positive size = buy intent, negative size = sell intent.
+    ///      `premiumPerUnit` is premium per 1e18 units of size.
     function _signQuote(
         address funderAddr,
         address vaultAddr,
         uint256 signerKey,
         int256 size,
-        uint256 amount,
+        uint256 premiumPerUnit,
         uint256 validTill,
         uint256 nonce
     ) internal view returns (bytes memory) {
-        bytes32 digest = _buildDigest(funderAddr, vaultAddr, size, amount, validTill, nonce);
+        bytes32 digest = _buildDigest(funderAddr, vaultAddr, size, premiumPerUnit, validTill, nonce);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(signerKey, digest);
         return abi.encodePacked(r, s, v);
     }
@@ -167,11 +168,13 @@ abstract contract Setup is Test {
 
         uint256 nonce = pair.nonces(mm);
         uint256 validTill = block.timestamp + 1 hours;
+        // premiumPerUnit: premium per 1e18 units. For size=1e18 this equals premium.
+        uint128 premiumPerUnit = uint128(uint256(premium) * 1e18 / uint256(size));
         // mm is buyer → positive size
-        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, int256(uint256(size)), premium, validTill, nonce);
+        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, int256(uint256(size)), premiumPerUnit, validTill, nonce);
 
         vm.prank(_seller);
-        pair.sell(address(funder), mm, size, premium, validTill, sig);
+        pair.sell(address(funder), mm, size, size, premiumPerUnit, validTill, sig);
     }
 
     /// @dev Full buy path: buyer pays premium; mm's funder provides collateral.
@@ -195,11 +198,13 @@ abstract contract Setup is Test {
 
         uint256 nonce = pair.nonces(mm);
         uint256 validTill = block.timestamp + 1 hours;
+        // premiumPerUnit: premium per 1e18 units. For size=1e18 this equals premium.
+        uint128 premiumPerUnit = uint128(uint256(premium) * 1e18 / uint256(size));
         // mm is seller → negative size
-        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, -int256(uint256(size)), premium, validTill, nonce);
+        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, -int256(uint256(size)), premiumPerUnit, validTill, nonce);
 
         vm.prank(_buyer);
-        pair.buy(address(funder), mm, size, premium, validTill, sig);
+        pair.buy(address(funder), mm, size, size, premiumPerUnit, validTill, sig);
     }
 
     /// @dev Fund callback with swap tokens so exercise can complete.

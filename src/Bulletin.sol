@@ -34,7 +34,7 @@ contract Bulletin is IBulletin, SigVerifier {
         address vault,
         address signer,
         address funder,
-        uint128 premium,
+        uint128 premiumPerUnit,
         int128 size,
         uint256 validTillTimestamp,
         uint256 nonce,
@@ -48,7 +48,7 @@ contract Bulletin is IBulletin, SigVerifier {
                 funder,
                 vault,
                 int256(size),
-                premium,
+                premiumPerUnit,
                 validTillTimestamp,
                 nonce,
                 signature
@@ -58,7 +58,7 @@ contract Bulletin is IBulletin, SigVerifier {
         _orders[vault][signer][nonce] = Order({
             funder: funder,
             signer: signer,
-            premium: premium,
+            premiumPerUnit: premiumPerUnit,
             size: size,
             validTillTimestamp: validTillTimestamp,
             nonce: nonce,

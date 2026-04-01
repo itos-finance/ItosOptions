@@ -260,28 +260,30 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
         address funderAddr,
         address buyerSigner,
         uint128 size,
-        uint128 premium,
+        uint128 fill,
+        uint128 premiumPerUnit,
         uint256 validTillTimestamp,
         bytes calldata signature
     ) external beforeDepositDeadline nonReentrant {
         if (validTillTimestamp < block.timestamp) revert QuoteExpired();
-        if (size == 0) revert ZeroSize();
-        if (size < minDepositSize) revert BelowMinDeposit();
+        if (fill == 0) revert ZeroSize();
+        if (fill > size) revert FillExceedsQuotedSize();
+        if (fill < minDepositSize) revert BelowMinDeposit();
 
         address seller = msg.sender;
 
-        // Verify and consume the buyer's quote signature.
+        // Verify and consume the buyer's quote signature (committed to the max size).
         _verifyAndConsumeQuote(
             funderAddr,
             buyerSigner,
             int256(uint256(size)),
-            premium,
+            premiumPerUnit,
             validTillTimestamp,
             signature
         );
 
-        // Seller acquires a short position; returns units that required new collateral.
-        uint256 physicalSize = _addShort(seller, size);
+        // Seller acquires a short position for `fill` units.
+        uint256 physicalSize = _addShort(seller, fill);
         if (physicalSize > 0) {
             depositToken.safeTransferFrom(
                 seller,
@@ -291,29 +293,30 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
             totalSold += physicalSize;
         }
 
-        // Buyer acquires a long position; returns units netted from an existing short.
-        uint256 buyerNetted = _addLong(buyerSigner, size);
+        // Buyer acquires a long position for `fill` units.
+        uint256 buyerNetted = _addLong(buyerSigner, fill);
 
-        // Pull premium from buyer's Funder.
+        // Pull premium from buyer's Funder. Total = premiumPerUnit * fill / 1e18.
+        uint256 totalPremium = (uint256(premiumPerUnit) * uint256(fill)) / 1e18;
         uint256 cashBefore = cashToken.balanceOf(address(this));
         IFunderBase(funderAddr).requestFunds(
             buyerSigner,
             address(cashToken),
-            premium
+            totalPremium
         );
-        if (cashToken.balanceOf(address(this)) - cashBefore != premium)
+        if (cashToken.balanceOf(address(this)) - cashBefore != totalPremium)
             revert PremiumUnderpaid();
 
-        uint256 fee = (uint256(premium) * FEE_BPS) / BPS;
+        uint256 fee = (totalPremium * FEE_BPS) / BPS;
         totalFees += fee;
-        cashToken.safeTransfer(seller, premium - fee);
+        cashToken.safeTransfer(seller, totalPremium - fee);
 
         emit Sold(
             seller,
             buyerSigner,
-            size,
-            premium,
-            size - physicalSize,
+            fill,
+            uint128(totalPremium),
+            fill - physicalSize,
             buyerNetted
         );
     }
@@ -329,31 +332,33 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
         address sellerFunderAddr,
         address sellerSigner,
         uint128 size,
-        uint128 premium,
+        uint128 fill,
+        uint128 premiumPerUnit,
         uint256 validTillTimestamp,
         bytes calldata signature
     ) external beforeDepositDeadline nonReentrant {
         if (validTillTimestamp < block.timestamp) revert QuoteExpired();
-        if (size == 0) revert ZeroSize();
-        if (size < minDepositSize) revert BelowMinDeposit();
+        if (fill == 0) revert ZeroSize();
+        if (fill > size) revert FillExceedsQuotedSize();
+        if (fill < minDepositSize) revert BelowMinDeposit();
 
         address buyer = msg.sender;
 
-        // Verify and consume the seller's quote signature.
+        // Verify and consume the seller's quote signature (committed to the max size).
         _verifyAndConsumeQuote(
             sellerFunderAddr,
             sellerSigner,
             -int256(uint256(size)),
-            premium,
+            premiumPerUnit,
             validTillTimestamp,
             signature
         );
 
-        // Buyer acquires a long position.
-        uint256 buyerNetted = _addLong(buyer, size);
+        // Buyer acquires a long position for `fill` units.
+        uint256 buyerNetted = _addLong(buyer, fill);
 
-        // Seller acquires a short position; returns units requiring new collateral.
-        uint256 physicalSize = _addShort(sellerSigner, size);
+        // Seller acquires a short position for `fill` units.
+        uint256 physicalSize = _addShort(sellerSigner, fill);
         uint256 acquireAmt = _depositAmount(physicalSize); // 0 when fully netted
         uint256 depositBefore = depositToken.balanceOf(address(this));
         IFunderBase(sellerFunderAddr).requestFunds(
@@ -365,11 +370,12 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
             revert CollateralUnderpaid();
         if (physicalSize > 0) totalSold += physicalSize;
 
-        // Buyer pays premium directly.
-        cashToken.safeTransferFrom(buyer, address(this), premium);
-        uint256 fee = (uint256(premium) * FEE_BPS) / BPS;
+        // Buyer pays premium. Total = premiumPerUnit * fill / 1e18.
+        uint256 totalPremium = (uint256(premiumPerUnit) * uint256(fill)) / 1e18;
+        cashToken.safeTransferFrom(buyer, address(this), totalPremium);
+        uint256 fee = (totalPremium * FEE_BPS) / BPS;
         totalFees += fee;
-        uint256 earnings = premium - fee;
+        uint256 earnings = totalPremium - fee;
         cashToken.forceApprove(sellerFunderAddr, earnings);
         IFunderBase(sellerFunderAddr).deposit(
             sellerSigner,
@@ -382,10 +388,10 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
         emit Bought(
             buyer,
             sellerSigner,
-            size,
-            premium,
+            fill,
+            uint128(totalPremium),
             buyerNetted,
-            size - physicalSize
+            fill - physicalSize
         );
     }
 
@@ -544,7 +550,7 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
         address funder,
         address signer,
         int256 size,
-        uint256 premium,
+        uint256 premiumPerUnit,
         uint256 validTillTimestamp,
         bytes calldata signature
     ) internal {
@@ -554,7 +560,7 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
                 funder,
                 address(this),
                 size,
-                premium,
+                premiumPerUnit,
                 validTillTimestamp,
                 currentNonce,
                 signature

@@ -16,7 +16,7 @@ interface IBulletin {
     struct Order {
         address funder;          // Funder or MultiFunder contract holding the funds
         address signer;          // Authorised signer on the funder whose quote is stored
-        uint128 premium;         // Total premium for the entire size
+        uint128 premiumPerUnit;  // Premium per 1e18 units of size (rate, not total)
         int128  size;            // Signed notional size: positive = buy (bid), negative = sell (offer)
         uint256 validTillTimestamp;
         uint256 nonce;           // Funder nonce this signature was made for
@@ -42,7 +42,7 @@ interface IBulletin {
     /// @param vault              The OPair to post the order for.
     /// @param signer             Address whose EIP-712 signature is provided.
     /// @param funder             Funder/MultiFunder holding the funds.
-    /// @param premium            Total premium for the entire size.
+    /// @param premiumPerUnit     Premium per 1e18 units of size (rate, not total).
     /// @param size               Signed notional size: positive = bid, negative = offer.
     /// @param validTillTimestamp Quote expiry.
     /// @param nonce              Funder nonce this signature was made for.
@@ -51,7 +51,7 @@ interface IBulletin {
         address vault,
         address signer,
         address funder,
-        uint128 premium,
+        uint128 premiumPerUnit,
         int128 size,
         uint256 validTillTimestamp,
         uint256 nonce,
