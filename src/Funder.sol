@@ -6,74 +6,39 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {
     SafeERC20
 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {FundingVerifier} from "./FundingVerifier.sol";
+import {FunderBase} from "./FunderBase.sol";
 import {IFunder} from "./interfaces/IFunder.sol";
 import {IFunderBase} from "./interfaces/IFunderBase.sol";
 
 /// @title Funder
-/// @notice Single-owner funding contract. The owner holds one shared token pool and may
-///         whitelist additional signers (e.g. trading bots) that can authorise transfers
-///         on their behalf. Each signer has an independent nonce per vault.
+/// @notice Single-owner funding contract. The admin holds one shared token pool and may
+///         grant SIGNER_ROLE to additional keys (e.g. trading bots) that can authorise
+///         transfers on their behalf.
 ///
-/// @dev Signatures commit to the total premium. Each signer has an independent nonce per vault.
-contract Funder is IFunder, FundingVerifier {
+/// @dev OPair verifies signatures and manages nonces. Funder only transfers funds when
+///      called by a valid vault (factory.isPair) for an address holding SIGNER_ROLE.
+contract Funder is IFunder, FunderBase {
     using SafeERC20 for IERC20;
 
-    /// @inheritdoc IFunder
-    address public immutable owner;
+    bytes32 public constant SIGNER_ROLE = keccak256("SIGNER_ROLE");
 
-    /// @inheritdoc IFunder
-    mapping(address => bool) public authorizedSigners;
-
-    /// @notice Per-signer per-vault nonce. Incremented on each successful requestFunds.
-    mapping(address => mapping(address => uint256)) public nonces;
-
-    modifier onlyOwner() {
-        if (msg.sender != owner) revert NotOwner();
-        _;
-    }
-
-    constructor(address _factory) FundingVerifier(_factory) {
-        owner = msg.sender;
-    }
-
-    // --- Admin ---
-
-    /// @inheritdoc IFunder
-    function addSigner(address signer) external onlyOwner {
-        authorizedSigners[signer] = true;
-        emit SignerAdded(signer);
-    }
-
-    /// @inheritdoc IFunder
-    function removeSigner(address signer) external onlyOwner {
-        authorizedSigners[signer] = false;
-        emit SignerRemoved(signer);
+    constructor(address _factory) FunderBase(_factory) {
+        _grantRole(SIGNER_ROLE, msg.sender);
     }
 
     // --- Token management ---
 
     /// @inheritdoc IFunderBase
     /// @dev `signer` is ignored for Funder (shared pool); tokens go to the pool.
-    function deposit(address signer, address token, uint256 amount) external {
+    function deposit(address signer, address token, uint256 amount) external override {
         IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
         emit FundsDeposited(signer, token, amount);
     }
 
-    /// @inheritdoc IFunderBase
-    function withdraw(address token, uint256 amount) external onlyOwner {
-        IERC20(token).safeTransfer(owner, amount);
+    /// @inheritdoc IFunder
+    function withdraw(address token, uint256 amount) external override(IFunderBase, IFunder) onlyRole(DEFAULT_ADMIN_ROLE) {
+        IERC20(token).safeTransfer(msg.sender, amount);
         emit FundsWithdrawn(token, amount);
-    }
-
-    // --- Nonce management ---
-
-    /// @inheritdoc IFunderBase
-    function bumpNonce(address vault, uint256 amount) external {
-        if (msg.sender != owner && !authorizedSigners[msg.sender])
-            revert NotAuthorizedSigner();
-        uint256 newNonce = nonces[msg.sender][vault] += amount;
-        emit NonceBumped(msg.sender, vault, newNonce);
     }
 
     // --- Vault interface ---
@@ -82,25 +47,10 @@ contract Funder is IFunder, FundingVerifier {
     function requestFunds(
         address signer,
         address token,
-        uint256 premium,
-        int256 size,
-        uint256 acquireAmount,
-        uint256 validTillTimestamp,
-        bytes calldata signature
-    ) external onlyValidVault {
-        if (signer != owner && !authorizedSigners[signer])
-            revert NotAuthorizedSigner();
-
-        uint256 currentNonce = nonces[signer][msg.sender];
-        _verifyQuote(
-            signer,
-            currentNonce,
-            size,
-            premium,
-            validTillTimestamp,
-            signature
-        );
-        nonces[signer][msg.sender] = currentNonce + 1;
+        uint256 acquireAmount
+    ) external override onlyValidVault {
+        if (!hasRole(SIGNER_ROLE, signer))
+            revert AccessControlUnauthorizedAccount(signer, SIGNER_ROLE);
 
         if (acquireAmount > 0)
             IERC20(token).safeTransfer(msg.sender, acquireAmount);

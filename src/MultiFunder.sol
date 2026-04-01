@@ -6,7 +6,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {
     SafeERC20
 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {FundingVerifier} from "./FundingVerifier.sol";
+import {FunderBase} from "./FunderBase.sol";
 import {IMultiFunder} from "./interfaces/IMultiFunder.sol";
 import {IFunderBase} from "./interfaces/IFunderBase.sol";
 
@@ -14,17 +14,15 @@ import {IFunderBase} from "./interfaces/IFunderBase.sol";
 /// @notice Shared funding contract: multiple wallets each maintain their own per-token balance.
 ///         All operations are permissionless per-user (each user manages only their own funds).
 ///
-/// @dev Signatures commit to the total premium. Each signer has an independent nonce per vault.
-contract MultiFunder is IMultiFunder, FundingVerifier {
+/// @dev OPair verifies signatures and manages nonces. MultiFunder only transfers funds when
+///      called by a valid vault (factory.isPair), debiting the signer's balance.
+contract MultiFunder is IMultiFunder, FunderBase {
     using SafeERC20 for IERC20;
 
     /// @inheritdoc IMultiFunder
     mapping(address => mapping(address => uint256)) public balances;
 
-    /// @notice Per-signer per-vault nonce. Incremented on each successful requestFunds.
-    mapping(address => mapping(address => uint256)) public nonces;
-
-    constructor(address _factory) FundingVerifier(_factory) {}
+    constructor(address _factory) FunderBase(_factory) {}
 
     // --- Token management ---
 
@@ -44,39 +42,16 @@ contract MultiFunder is IMultiFunder, FundingVerifier {
         emit FundsWithdrawn(msg.sender, token, amount);
     }
 
-    // --- Nonce management ---
-
-    /// @inheritdoc IFunderBase
-    function bumpNonce(address vault, uint256 amount) external {
-        uint256 newNonce = nonces[msg.sender][vault] += amount;
-        emit NonceBumped(msg.sender, vault, newNonce);
-    }
-
     // --- Vault interface ---
 
     /// @inheritdoc IFunderBase
     function requestFunds(
         address signer,
         address token,
-        uint256 premium,
-        int256 size,
-        uint256 acquireAmount,
-        uint256 validTillTimestamp,
-        bytes calldata signature
+        uint256 acquireAmount
     ) external onlyValidVault {
         if (balances[signer][token] < acquireAmount)
             revert InsufficientBalance();
-
-        uint256 currentNonce = nonces[signer][msg.sender];
-        _verifyQuote(
-            signer,
-            currentNonce,
-            size,
-            premium,
-            validTillTimestamp,
-            signature
-        );
-        nonces[signer][msg.sender] = currentNonce + 1;
 
         balances[signer][token] -= acquireAmount;
         if (acquireAmount > 0)

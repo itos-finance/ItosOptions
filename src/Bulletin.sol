@@ -2,8 +2,9 @@
 // Change Date: 2030-03-17  (license converts to GPL-2.0-or-later on this date)
 pragma solidity ^0.8.34;
 
-import {FundingVerifier} from "./FundingVerifier.sol";
+import {SigVerifier} from "./SigVerifier.sol";
 import {IBulletin} from "./interfaces/IBulletin.sol";
+import {IOPairFactory} from "./interfaces/IOPairFactory.sol";
 
 /// @title Bulletin
 /// @notice On-chain order book for OPair orders. Inherits FundingVerifier so that
@@ -15,11 +16,14 @@ import {IBulletin} from "./interfaces/IBulletin.sol";
 ///         at future nonces without invalidating earlier ones.
 ///
 /// @dev Fund availability is verified off-chain before posting. No on-chain reservation.
-contract Bulletin is IBulletin, FundingVerifier {
+contract Bulletin is IBulletin, SigVerifier {
+    IOPairFactory public immutable factory;
     // vault → signer → nonce → Order
     mapping(address => mapping(address => mapping(uint256 => Order))) private _orders;
 
-    constructor(address _factory) FundingVerifier(_factory) {}
+    constructor(address _factory) {
+        factory = IOPairFactory(_factory);
+    }
 
     // ------------------------------------------------------------------ //
     //  Public write functions

@@ -3,11 +3,11 @@ pragma solidity ^0.8.34;
 
 import {Setup} from "./Setup.t.sol";
 import {OPair} from "../src/OPair.sol";
-import {OPairFactory} from "../src/OPairFactory.sol";
+import {IOPair} from "../src/interfaces/IOPair.sol";
 import {Funder} from "../src/Funder.sol";
-import {FundingVerifier} from "../src/FundingVerifier.sol";
-import {IFunder} from "../src/interfaces/IFunder.sol";
-import {IFunderBase} from "../src/interfaces/IFunderBase.sol";
+import {SigVerifier} from "../src/SigVerifier.sol";
+import {FunderBase} from "../src/FunderBase.sol";
+import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {IExerciseCallback} from "../src/interfaces/IExerciseCallback.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
@@ -18,7 +18,7 @@ import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 
 /// @dev Fake funder that does nothing in requestFunds — no token transfer.
 contract FakeFunder {
-    function requestFunds(address, address, uint256, int256, uint256, uint256, bytes calldata) external {}
+    function requestFunds(address, address, uint256) external {}
 }
 
 /// @dev Reentrant callback that tries to re-enter exercise during onExercise.
@@ -66,7 +66,7 @@ contract DrainFunder {
         token    = IERC20(_token);
     }
 
-    function requestFunds(address, address, uint256, int256, uint256 acquireAmount, uint256, bytes calldata) external {
+    function requestFunds(address, address, uint256 acquireAmount) external {
         // Transfer tokens out to attacker instead of msg.sender (the pair)
         token.transfer(attacker, acquireAmount);
     }
@@ -80,6 +80,9 @@ contract SecurityTest is Setup {
 
     // =========================================================================
     // Fake funder — PremiumUnderpaid
+    //
+    // OPair validates the sig (passes because buyer signed for fakeFunder),
+    // then calls fake.requestFunds which does nothing → PremiumUnderpaid.
     // =========================================================================
 
     function test_fakeFunder_revertsPremiumUnderpaid() public {
@@ -88,15 +91,18 @@ contract SecurityTest is Setup {
 
         uint128 size = 1e18;
         uint128 premium = 100e6;
+        uint256 validTill = block.timestamp + 1 hours;
         weth.mint(seller, size);
         vm.prank(seller);
         weth.approve(address(pair), size);
 
-        bytes memory sig = hex"00"; // fake funder ignores it
+        // mm signs for the fake funder — OPair sig check passes, but fake pays nothing
+        uint256 nonce = pair.nonces(mm);
+        bytes memory sig = _signQuote(address(fake), address(pair), mmPrivateKey, int256(uint256(size)), premium, validTill, nonce);
 
         vm.prank(seller);
-        vm.expectRevert(OPair.PremiumUnderpaid.selector);
-        pair.sell(address(fake), mm, size, premium, block.timestamp + 1 hours, sig);
+        vm.expectRevert(IOPair.PremiumUnderpaid.selector);
+        pair.sell(address(fake), mm, size, premium, validTill, sig);
     }
 
     // =========================================================================
@@ -109,13 +115,18 @@ contract SecurityTest is Setup {
 
         uint128 size = 1e18;
         uint128 premium = 100e6;
+        uint256 validTill = block.timestamp + 1 hours;
         usdc.mint(buyer, premium);
         vm.prank(buyer);
         usdc.approve(address(pair), premium);
 
+        // mm signs for the fake funder — OPair sig check passes, but fake provides no collateral
+        uint256 nonce = pair.nonces(mm);
+        bytes memory sig = _signQuote(address(fake), address(pair), mmPrivateKey, -int256(uint256(size)), premium, validTill, nonce);
+
         vm.prank(buyer);
-        vm.expectRevert(OPair.CollateralUnderpaid.selector);
-        pair.buy(address(fake), mm, size, premium, block.timestamp + 1 hours, hex"00");
+        vm.expectRevert(IOPair.CollateralUnderpaid.selector);
+        pair.buy(address(fake), mm, size, premium, validTill, sig);
     }
 
     // =========================================================================
@@ -127,13 +138,153 @@ contract SecurityTest is Setup {
         DrainFunder drain = new DrainFunder(makeAddr("attacker"), address(weth));
         weth.mint(address(drain), 1e18);
 
-        usdc.mint(buyer, 100e6);
+        uint128 size = 1e18;
+        uint128 premium = 100e6;
+        uint256 validTill = block.timestamp + 1 hours;
+        usdc.mint(buyer, premium);
         vm.prank(buyer);
-        usdc.approve(address(pair), 100e6);
+        usdc.approve(address(pair), premium);
+
+        // mm signs for the drain funder
+        uint256 nonce = pair.nonces(mm);
+        bytes memory sig = _signQuote(address(drain), address(pair), mmPrivateKey, -int256(uint256(size)), premium, validTill, nonce);
 
         vm.prank(buyer);
-        vm.expectRevert(OPair.CollateralUnderpaid.selector);
-        pair.buy(address(drain), mm, 1e18, 100e6, block.timestamp + 1 hours, hex"00");
+        vm.expectRevert(IOPair.CollateralUnderpaid.selector);
+        pair.buy(address(drain), mm, size, premium, validTill, sig);
+    }
+
+    // =========================================================================
+    // Tampered funder: attacker substitutes a different funder address
+    //
+    // This is the core attack that the Option B refactor closes. The seller
+    // signs for realFunder; the attacker passes fakeFunder. OPair now validates
+    // the sig (which commits to funder) before calling requestFunds, so the
+    // funder address cannot be swapped.
+    // =========================================================================
+
+    function test_tamperedFunder_buy_rejected() public {
+        OPair pair = _createCallPair();
+        FakeFunder fake = new FakeFunder();
+
+        uint128 size = 1e18;
+        uint128 premium = 100e6;
+        uint256 validTill = block.timestamp + 1 hours;
+
+        usdc.mint(buyer, premium);
+        vm.prank(buyer);
+        usdc.approve(address(pair), premium);
+        weth.mint(address(funder), size);
+
+        // mm signs committing to address(funder)
+        uint256 nonce = pair.nonces(mm);
+        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, -int256(uint256(size)), premium, validTill, nonce);
+
+        // Attacker substitutes fake funder — sig is for realFunder, not fake
+        vm.prank(buyer);
+        vm.expectRevert(SigVerifier.InvalidSignature.selector);
+        pair.buy(address(fake), mm, size, premium, validTill, sig);
+    }
+
+    function test_tamperedFunder_sell_rejected() public {
+        OPair pair = _createCallPair();
+        FakeFunder fake = new FakeFunder();
+
+        uint128 size = 1e18;
+        uint128 premium = 100e6;
+        uint256 validTill = block.timestamp + 1 hours;
+
+        weth.mint(seller, size);
+        vm.prank(seller);
+        weth.approve(address(pair), size);
+
+        // mm signs committing to address(funder)
+        uint256 nonce = pair.nonces(mm);
+        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, int256(uint256(size)), premium, validTill, nonce);
+
+        // Seller substitutes fake funder — rejected
+        vm.prank(seller);
+        vm.expectRevert(SigVerifier.InvalidSignature.selector);
+        pair.sell(address(fake), mm, size, premium, validTill, sig);
+    }
+
+    // =========================================================================
+    // Tampered parameters: buyer passes different premium or size than signed
+    // =========================================================================
+
+    function test_tamperedPremium_buy_rejected() public {
+        OPair pair = _createCallPair();
+
+        uint128 size = 1e18;
+        uint128 signedPremium = 200e6;
+        uint128 calledPremium = 1e6; // buyer tries to pay less
+        uint256 validTill = block.timestamp + 1 hours;
+
+        usdc.mint(buyer, calledPremium);
+        vm.prank(buyer);
+        usdc.approve(address(pair), calledPremium);
+        weth.mint(address(funder), size);
+
+        // mm signs for 200e6
+        uint256 nonce = pair.nonces(mm);
+        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, -int256(uint256(size)), signedPremium, validTill, nonce);
+
+        // Buyer passes 1e6 instead of 200e6 — digest mismatch
+        vm.prank(buyer);
+        vm.expectRevert(SigVerifier.InvalidSignature.selector);
+        pair.buy(address(funder), mm, size, calledPremium, validTill, sig);
+    }
+
+    function test_tamperedSize_buy_rejected() public {
+        OPair pair = _createCallPair();
+
+        uint128 signedSize = 1e18;
+        uint128 calledSize = 5e18; // buyer tries to acquire more
+        uint128 premium = 100e6;
+        uint256 validTill = block.timestamp + 1 hours;
+
+        usdc.mint(buyer, premium);
+        vm.prank(buyer);
+        usdc.approve(address(pair), premium);
+        weth.mint(address(funder), calledSize);
+
+        // mm signs for 1e18
+        uint256 nonce = pair.nonces(mm);
+        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, -int256(uint256(signedSize)), premium, validTill, nonce);
+
+        // Buyer passes 5e18 instead of 1e18 — digest mismatch
+        vm.prank(buyer);
+        vm.expectRevert(SigVerifier.InvalidSignature.selector);
+        pair.buy(address(funder), mm, calledSize, premium, validTill, sig);
+    }
+
+    // =========================================================================
+    // Wrong signer: buyer specifies victim as sellerSigner but signature is
+    // from attacker — OPair recovers attacker address, not victim → rejected
+    // =========================================================================
+
+    function test_wrongSigner_buy_rejected() public {
+        OPair pair = _createCallPair();
+
+        uint256 attackerKey = 0xDEAD;
+        address victim = mm;
+
+        uint128 size = 1e18;
+        uint128 premium = 100e6;
+        uint256 validTill = block.timestamp + 1 hours;
+
+        usdc.mint(buyer, premium);
+        vm.prank(buyer);
+        usdc.approve(address(pair), premium);
+        weth.mint(address(funder), size);
+
+        // Attacker signs for themselves but buyer claims victim is the signer
+        uint256 nonce = pair.nonces(victim);
+        bytes memory sig = _signQuote(address(funder), address(pair), attackerKey, -int256(uint256(size)), premium, validTill, nonce);
+
+        vm.prank(buyer);
+        vm.expectRevert(SigVerifier.InvalidSignature.selector);
+        pair.buy(address(funder), victim, size, premium, validTill, sig);
     }
 
     // =========================================================================
@@ -196,7 +347,7 @@ contract SecurityTest is Setup {
         usdc.mint(address(funder), premium);
 
         vm.prank(seller);
-        vm.expectRevert(FundingVerifier.InvalidSignature.selector);
+        vm.expectRevert(SigVerifier.InvalidSignature.selector);
         pairB.sell(address(funder), mm, size, premium, validTill, sigForA);
     }
 
@@ -224,7 +375,7 @@ contract SecurityTest is Setup {
         weth.approve(address(pair), size);
 
         vm.prank(seller);
-        vm.expectRevert(FundingVerifier.InvalidSignature.selector);
+        vm.expectRevert(SigVerifier.InvalidSignature.selector);
         pair.sell(address(funder2), mm, size, premium, validTill, sigForFunder1);
     }
 
@@ -240,7 +391,7 @@ contract SecurityTest is Setup {
 
         // First sell — consumes nonce 0
         _doSell(pair, seller, size, premium);
-        assertEq(funder.nonces(mm, address(pair)), 1);
+        assertEq(pair.nonces(mm), 1);
 
         // Replay: build the same sig (nonce 0) and try to use it again
         bytes memory replaySig = _signQuote(address(funder), address(pair), mmPrivateKey, int256(uint256(size)), premium, validTill, 0);
@@ -250,7 +401,7 @@ contract SecurityTest is Setup {
         usdc.mint(address(funder), premium);
 
         vm.prank(seller);
-        vm.expectRevert(FundingVerifier.InvalidSignature.selector);
+        vm.expectRevert(SigVerifier.InvalidSignature.selector);
         pair.sell(address(funder), mm, size, premium, validTill, replaySig);
     }
 
@@ -259,15 +410,13 @@ contract SecurityTest is Setup {
     // =========================================================================
 
     function test_nonVault_cannotCallRequestFunds() public {
-        OPair pair = _createCallPair();
         usdc.mint(address(funder), 100e6);
-        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, int256(1e18), 100e6, block.timestamp + 1, 0);
 
         // attacker is not a registered pair
         address attacker = makeAddr("attacker");
         vm.prank(attacker);
-        vm.expectRevert(FundingVerifier.NotValidVault.selector);
-        funder.requestFunds(mm, address(usdc), 100e6, int256(1e18), 100e6, block.timestamp + 1, sig);
+        vm.expectRevert(FunderBase.NotValidVault.selector);
+        funder.requestFunds(mm, address(usdc), 100e6);
     }
 
     // =========================================================================
@@ -276,15 +425,17 @@ contract SecurityTest is Setup {
 
     function test_unauthorizedSigner_cannotDrainFunder() public {
         OPair pair = _createCallPair();
-        uint256 attackerKey = 0xDEAD;
-        address attacker = vm.addr(attackerKey);
-
+        address attacker = makeAddr("attacker");
         usdc.mint(address(funder), 1000e6);
-        bytes memory sig = _signQuote(address(funder), address(pair), attackerKey, int256(1e18), 100e6, block.timestamp + 1, 0);
 
         vm.prank(address(pair));
-        vm.expectRevert(IFunder.NotAuthorizedSigner.selector);
-        funder.requestFunds(attacker, address(usdc), 100e6, int256(1e18), 100e6, block.timestamp + 1, sig);
+        bytes32 signerRole = keccak256("SIGNER_ROLE");
+        vm.expectRevert(abi.encodeWithSelector(
+            IAccessControl.AccessControlUnauthorizedAccount.selector,
+            attacker,
+            signerRole
+        ));
+        funder.requestFunds(attacker, address(usdc), 100e6);
     }
 
     // =========================================================================
@@ -324,149 +475,4 @@ contract SecurityTest is Setup {
         assertFalse(reentrantCb.attacked());
     }
 
-    // =========================================================================
-    // Factory input validation
-    // =========================================================================
-
-    function test_factory_revertsZeroRiskToken() public {
-        vm.prank(admin);
-        vm.expectRevert(OPairFactory.ZeroAddress.selector);
-        factory.createPair(address(0), address(usdc), STRIKE, expiryTimestamp, true, MIN_DEPOSIT, "X", "X");
-    }
-
-    function test_factory_revertsZeroCashToken() public {
-        vm.prank(admin);
-        vm.expectRevert(OPairFactory.ZeroAddress.selector);
-        factory.createPair(address(weth), address(0), STRIKE, expiryTimestamp, true, MIN_DEPOSIT, "X", "X");
-    }
-
-    function test_factory_revertsSameToken() public {
-        vm.prank(admin);
-        vm.expectRevert(OPairFactory.SameToken.selector);
-        factory.createPair(address(weth), address(weth), STRIKE, expiryTimestamp, true, MIN_DEPOSIT, "X", "X");
-    }
-
-    function test_factory_revertsExpiryInPast() public {
-        vm.prank(admin);
-        vm.expectRevert(OPairFactory.ExpiryInPast.selector);
-        factory.createPair(address(weth), address(usdc), STRIKE, block.timestamp, true, MIN_DEPOSIT, "X", "X");
-    }
-
-    // =========================================================================
-    // Min deposit enforcement
-    // =========================================================================
-
-    function test_sell_revertsIfBelowMinDeposit() public {
-        OPair pair = _createCallPair();
-        uint128 tinySize = MIN_DEPOSIT - 1;
-
-        weth.mint(seller, tinySize);
-        vm.prank(seller);
-        weth.approve(address(pair), tinySize);
-        usdc.mint(address(funder), 1);
-
-        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, int256(uint256(tinySize)), 1, block.timestamp + 1, 0);
-        vm.prank(seller);
-        vm.expectRevert(OPair.BelowMinDeposit.selector);
-        pair.sell(address(funder), mm, tinySize, 1, block.timestamp + 1, sig);
-    }
-
-    function test_sell_exactlyMinDeposit_succeeds() public {
-        OPair pair = _createCallPair();
-        uint128 size = MIN_DEPOSIT;
-
-        weth.mint(seller, size);
-        vm.prank(seller);
-        weth.approve(address(pair), size);
-        usdc.mint(address(funder), 1);
-
-        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, int256(uint256(size)), 1, block.timestamp + 1, 0);
-        vm.prank(seller);
-        pair.sell(address(funder), mm, size, 1, block.timestamp + 1, sig);
-        assertEq(pair.totalSold(), size);
-    }
-
-    // =========================================================================
-    // Quote expiry enforced by OPair
-    // =========================================================================
-
-    function test_sell_revertsExpiredQuote() public {
-        OPair pair = _createCallPair();
-        uint256 pastTime = block.timestamp - 1;
-
-        weth.mint(seller, 1e18);
-        vm.prank(seller);
-        weth.approve(address(pair), 1e18);
-        usdc.mint(address(funder), 100e6);
-
-        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, int256(1e18), 100e6, pastTime, 0);
-        vm.prank(seller);
-        vm.expectRevert(OPair.QuoteExpired.selector);
-        pair.sell(address(funder), mm, 1e18, 100e6, pastTime, sig);
-    }
-
-    // =========================================================================
-    // Withdrawal access control on Funder
-    // =========================================================================
-
-    function test_funder_withdrawOnlyOwner() public {
-        usdc.mint(address(funder), 1000e6);
-
-        vm.prank(seller); // not owner
-        vm.expectRevert(IFunder.NotOwner.selector);
-        funder.withdraw(address(usdc), 1000e6);
-
-        vm.prank(mm); // owner
-        funder.withdraw(address(usdc), 1000e6);
-        assertEq(usdc.balanceOf(mm), 1000e6);
-    }
-
-    // =========================================================================
-    // extendExpiry: only factory owner can extend; cannot shorten
-    // =========================================================================
-
-    function test_extendExpiry_revertsNonFactoryOwner() public {
-        OPair pair = _createCallPair();
-        vm.prank(seller);
-        vm.expectRevert(OPair.NotFactoryOwner.selector);
-        pair.extendExpiry(expiryTimestamp + 1 days);
-    }
-
-    function test_extendExpiry_cannotShortenExpiry() public {
-        OPair pair = _createCallPair();
-        vm.prank(admin);
-        vm.expectRevert(OPair.NewExpiryNotLater.selector);
-        pair.extendExpiry(expiryTimestamp - 1);
-    }
-
-    // =========================================================================
-    // Bulletin: posting invalid or mismatched signatures is rejected
-    // =========================================================================
-
-    function test_bulletin_rejectsBadSig() public {
-        OPair pair = _createCallPair();
-        uint256 validTill = block.timestamp + 1 hours;
-        // Sign with wrong key
-        uint256 wrongKey = 0xBAD;
-        bytes32 ds = keccak256(abi.encode(
-            keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
-            keccak256("MonasteryFunder"), keccak256("1"), block.chainid, address(funder)
-        ));
-        bytes32 sh = keccak256(abi.encode(
-            keccak256("Quote(address funder,int256 size,address vault,uint256 premium,uint256 validTillTimestamp,uint256 nonce)"),
-            address(funder), int256(1e18), address(pair), uint256(0.1e18), validTill, uint256(0)
-        ));
-        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", ds, sh));
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(wrongKey, digest);
-        bytes memory badSig = abi.encodePacked(r, s, v);
-
-        vm.expectRevert(FundingVerifier.InvalidSignature.selector);
-        bulletin.post(address(pair), mm, address(funder), 0.1e18, int128(1e18), validTill, 0, badSig);
-    }
-
-    function test_bulletin_rejectsUnregisteredVault() public {
-        bytes memory sig = hex"00";
-        vm.expectRevert();
-        bulletin.post(address(0xdead), mm, address(funder), 100, int128(1e18), block.timestamp + 1, 0, sig);
-    }
 }

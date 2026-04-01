@@ -4,7 +4,7 @@ pragma solidity ^0.8.34;
 import {Setup} from "./Setup.t.sol";
 import {Bulletin} from "../src/Bulletin.sol";
 import {IBulletin} from "../src/interfaces/IBulletin.sol";
-import {FundingVerifier} from "../src/FundingVerifier.sol";
+import {SigVerifier} from "../src/SigVerifier.sol";
 import {OPair} from "../src/OPair.sol";
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 
@@ -162,7 +162,7 @@ contract BulletinTest is Setup {
         uint256 validTill = block.timestamp + 1 hours;
         bytes memory badSig = _signBulletinQuote(address(funder), address(pair), 0xDEAD, BID_SIZE, PREMIUM, validTill, 0);
 
-        vm.expectRevert(FundingVerifier.InvalidSignature.selector);
+        vm.expectRevert(SigVerifier.InvalidSignature.selector);
         bulletin.post(address(pair), mm, address(funder), PREMIUM, BID_SIZE, validTill, 0, badSig);
     }
 
@@ -170,7 +170,7 @@ contract BulletinTest is Setup {
         uint256 validTill = block.timestamp + 1 hours;
         bytes memory sig = _signBulletinQuote(address(funder), address(pair), mmPrivateKey, BID_SIZE, PREMIUM, validTill, 0);
 
-        vm.expectRevert(FundingVerifier.InvalidSignature.selector);
+        vm.expectRevert(SigVerifier.InvalidSignature.selector);
         bulletin.post(address(pair), mm, address(0xdead), PREMIUM, BID_SIZE, validTill, 0, sig);
     }
 

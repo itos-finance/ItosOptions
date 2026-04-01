@@ -2,25 +2,21 @@
 pragma solidity ^0.8.34;
 
 import {IFunderBase} from "./IFunderBase.sol";
+import {
+    IAccessControl
+} from "@openzeppelin/contracts/access/IAccessControl.sol";
 
 /// @title IFunder
-/// @notice Single-owner funding contract. The owner holds one shared token pool and may
-///         whitelist additional signers.
-interface IFunder is IFunderBase {
-    // --- Errors ---
-    error NotOwner();
-    error NotAuthorizedSigner();
-
+/// @notice Single-owner funding contract using AccessControl.
+///         DEFAULT_ADMIN_ROLE: can grant/revoke roles and withdraw funds.
+///         SIGNER_ROLE: authorised to have their quotes accepted via requestFunds.
+interface IFunder is IFunderBase, IAccessControl {
     // --- Events ---
     event FundsWithdrawn(address indexed token, uint256 amount);
-    event SignerAdded(address indexed signer);
-    event SignerRemoved(address indexed signer);
+
+    // --- Roles ---
+    function SIGNER_ROLE() external view returns (bytes32);
 
     // --- Admin ---
-    function addSigner(address signer) external;
-    function removeSigner(address signer) external;
-
-    // --- Getters ---
-    function owner() external view returns (address);
-    function authorizedSigners(address signer) external view returns (bool);
+    function withdraw(address token, uint256 amount) external;
 }

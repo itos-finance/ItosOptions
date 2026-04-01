@@ -232,6 +232,47 @@ contract IntegrationTest is Setup {
     // MultiFunder integration
     // =========================================================================
 
+    function test_multiFunder_buyPath_signerProvidesCollateral() public {
+        OPair pair = _createCallPair();
+        uint128 size = 1e18;
+        uint128 premium = 100e6;
+
+        // mm deposits WETH into multiFunder as the sell-side collateral
+        uint256 depositAmt = size; // call: collateral = risk token
+        weth.mint(mm, depositAmt);
+        vm.startPrank(mm);
+        weth.approve(address(multiFunder), depositAmt);
+        multiFunder.deposit(mm, address(weth), depositAmt);
+        vm.stopPrank();
+
+        // buyer pays premium
+        usdc.mint(buyer, premium);
+        vm.prank(buyer);
+        usdc.approve(address(pair), premium);
+
+        uint256 validTill = block.timestamp + 1 hours;
+        bytes memory sig = _signQuote(
+            address(multiFunder),
+            address(pair),
+            mmPrivateKey,
+            -int256(uint256(size)),
+            premium,
+            validTill,
+            pair.nonces(mm)
+        );
+
+        vm.prank(buyer);
+        pair.buy(address(multiFunder), mm, size, premium, validTill, sig);
+
+        assertEq(pair.netPosition(buyer), int256(uint256(size)));  // buyer is long
+        assertEq(pair.netPosition(mm),    -int256(uint256(size))); // mm is short
+        assertEq(weth.balanceOf(address(pair)), size);             // collateral locked
+
+        // premium minus fee deposited back to mm's multiFunder balance
+        uint256 fee = (uint256(premium) * pair.FEE_BPS()) / pair.BPS();
+        assertEq(multiFunder.balances(mm, address(usdc)), premium - fee);
+    }
+
     function test_multiFunder_sellsAndReceivesEarnings() public {
         OPair pair = _createCallPair();
         uint128 size = 1e18;
@@ -310,8 +351,8 @@ contract IntegrationTest is Setup {
         int256 signedSize = int256(uint256(size)); // positive = buy intent
 
         // 1. MM signs the quote and posts it to the Bulletin.
-        //    nonce=0 since funder.nonces(mm, pair)==0 at this point.
-        uint256 nonce = funder.nonces(mm, address(pair));
+        //    nonce=0 since pair.nonces(mm)==0 at this point.
+        uint256 nonce = pair.nonces(mm);
         bytes memory sig = _signQuote(
             address(funder),
             address(pair),
@@ -394,7 +435,7 @@ contract IntegrationTest is Setup {
         int256 signedSize = -int256(uint256(size)); // negative = sell intent
 
         // 1. MM signs the offer quote and posts it to the Bulletin.
-        uint256 nonce = funder.nonces(mm, address(pair));
+        uint256 nonce = pair.nonces(mm);
         bytes memory sig = _signQuote(
             address(funder),
             address(pair),
@@ -481,7 +522,7 @@ contract IntegrationTest is Setup {
         int256 signedSize = int256(uint256(size)); // positive = buy intent
 
         // ── Pre-sign both orders (before any trade executes) ─────────────────
-        assertEq(funder.nonces(mm, address(pair)), 0);
+        assertEq(pair.nonces(mm), 0);
 
         bytes memory sig0 = _signQuote(
             address(funder),
@@ -546,7 +587,7 @@ contract IntegrationTest is Setup {
             bid0.signature
         );
 
-        assertEq(funder.nonces(mm, address(pair)), 1); // nonce advanced
+        assertEq(pair.nonces(mm), 1); // nonce advanced
         assertEq(pair.netPosition(mm), int256(uint256(size))); // mm is long 1 ETH
 
         // ── sellerB fills bid1 (already on the Bulletin at nonce 1) ──────────
@@ -566,7 +607,7 @@ contract IntegrationTest is Setup {
             bid1.signature
         );
 
-        assertEq(funder.nonces(mm, address(pair)), 2); // nonce advanced again
+        assertEq(pair.nonces(mm), 2); // nonce advanced again
         assertEq(pair.netPosition(mm), int256(2 * uint256(size))); // mm is now long 2 ETH
 
         // Both sellers are short

@@ -13,6 +13,8 @@ import {
     ReentrancyGuardTransient
 } from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 
+import {SigVerifier} from "./SigVerifier.sol";
+import {IOPair} from "./interfaces/IOPair.sol";
 import {IFunderBase} from "./interfaces/IFunderBase.sol";
 import {IExerciseCallback} from "./interfaces/IExerciseCallback.sol";
 
@@ -22,7 +24,7 @@ import {IExerciseCallback} from "./interfaces/IExerciseCallback.sol";
 // ─────────────────────────────────────────────────────────────────────────────
 
 abstract contract OToken is IERC20 {
-    OPair public immutable pair;
+    IOPair public immutable pair;
 
     string public name;
     string public symbol;
@@ -32,7 +34,7 @@ abstract contract OToken is IERC20 {
     error NonTransferable();
 
     constructor(string memory id, string memory sym) {
-        pair = OPair(msg.sender);
+        pair = IOPair(msg.sender);
         name = id;
         symbol = sym;
     }
@@ -103,75 +105,8 @@ contract OShortToken is OToken {
 // opposing position is netted first before any new collateral is required.
 // ─────────────────────────────────────────────────────────────────────────────
 
-contract OPair is ReentrancyGuardTransient {
+contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
     using SafeERC20 for IERC20;
-
-    // -------------------------------------------------------------------------
-    // Errors
-    // -------------------------------------------------------------------------
-    error NotFactoryOwner();
-    error Expired();
-    error NotExpired();
-    error QuoteExpired();
-    error ZeroSize();
-    error BelowMinDeposit();
-    error InsufficientLongPosition();
-    error InsufficientShortPosition();
-    error NothingToSettle();
-    error PremiumUnderpaid();
-    error CollateralUnderpaid();
-    error CallbackUnderpaid();
-    error NewExpiryNotLater();
-    error DepositWindowClosed();
-    error ExerciseTooEarly();
-    error ExerciseWindowTooNarrow();
-    error DepositDeadlinePastExpiry();
-    error ExpiryTooSoon();
-
-    // -------------------------------------------------------------------------
-    // Events
-    // -------------------------------------------------------------------------
-    event NewOPair(
-        address indexed factory,
-        address indexed riskToken,
-        address indexed cashToken,
-        uint128 strike,
-        uint256 expiry,
-        bool isCall,
-        address longToken,
-        address shortToken
-    );
-    event Sold(
-        address indexed seller,
-        address indexed buyer,
-        uint128 size,
-        uint128 premium,
-        uint256 sellerNetted,
-        uint256 buyerNetted
-    );
-    event Bought(
-        address indexed buyer,
-        address indexed seller,
-        uint128 size,
-        uint128 premium,
-        uint256 buyerNetted,
-        uint256 sellerNetted
-    );
-    event Exercised(address indexed buyer, uint128 size);
-    event Claimed(address indexed seller, uint256 depositOut, uint256 swapOut);
-    event SettledClaimed(
-        address indexed account,
-        uint256 depositOut,
-        uint256 swapOut
-    );
-    event Netted(
-        address indexed account,
-        uint256 depositSettled,
-        uint256 swapSettled
-    );
-    event ExpiryExtended(uint256 newExpiry);
-    event DepositDeadlineUpdated(uint256 newDeadline);
-    event ExerciseEarliestUpdated(uint256 newEarliest);
 
     // -------------------------------------------------------------------------
     // Immutables
@@ -211,10 +146,26 @@ contract OPair is ReentrancyGuardTransient {
     uint256 public totalFees; // accumulated cashToken fees.
 
     // -------------------------------------------------------------------------
+    // EIP-712 (QUOTE_TYPEHASH inherited from SigVerifier)
+    // -------------------------------------------------------------------------
+    /// @notice EIP-712 domain separator cached at construction for gas efficiency.
+    ///         OPair is the verifyingContract. Used by signers and Bulletin to build digests.
+    bytes32 public immutable DOMAIN_SEPARATOR;
+
+    /// @notice Per-signer nonce. Incremented on each successful sell/buy that
+    ///         consumes a quote signed by that signer.
+    mapping(address => uint256) public nonces;
+
+    // -------------------------------------------------------------------------
     // Constants
     // -------------------------------------------------------------------------
     uint256 public constant FEE_BPS = 750; // 7.5%
     uint256 public constant BPS = 10_000;
+
+    // By default deposits stop 3 hours before expiry.
+    uint256 public constant DEFAULT_DEPOSIT_DEADLINE = 3 hours;
+    // By default, exercises can only start 4 hours after creation as a precaution to give time for correcting any improperly configured vaults.
+    uint256 public constant DEFAULT_EXERCISE_BUFFER = 4 hours;
 
     // -------------------------------------------------------------------------
     // Modifiers
@@ -262,9 +213,11 @@ contract OPair is ReentrancyGuardTransient {
         minDepositSize = _minDepositSize;
         depositToken = _isCall ? IERC20(_riskToken) : IERC20(_cashToken);
         swapToken = _isCall ? IERC20(_cashToken) : IERC20(_riskToken);
-        depositDeadline = _expiry - 3 hours;
+        depositDeadline = _expiry - DEFAULT_DEPOSIT_DEADLINE;
+        // It'd be strange to create a contract that had a small deposit window.
         require(block.timestamp + 1 hours < depositDeadline, ExpiryTooSoon());
-        exerciseEarliest = block.timestamp + 4 hours;
+        exerciseEarliest = block.timestamp + DEFAULT_EXERCISE_BUFFER;
+        DOMAIN_SEPARATOR = _domainSeparatorFor(address(this));
 
         address long = address(new OLongToken(identifier, symbol));
         address short = address(new OShortToken(identifier, symbol));
@@ -278,6 +231,18 @@ contract OPair is ReentrancyGuardTransient {
             long,
             short
         );
+    }
+
+    // -------------------------------------------------------------------------
+    // Nonce management
+    // -------------------------------------------------------------------------
+
+    /// @notice Advance the caller's own nonce by `amount`, invalidating all prior
+    ///         signatures for that nonce range. Self-service: only msg.sender's nonce
+    ///         is affected.
+    function bumpNonce(uint256 amount) external {
+        uint256 newNonce = nonces[msg.sender] += amount;
+        emit NonceBumped(msg.sender, newNonce);
     }
 
     // -------------------------------------------------------------------------
@@ -305,6 +270,16 @@ contract OPair is ReentrancyGuardTransient {
 
         address seller = msg.sender;
 
+        // Verify and consume the buyer's quote signature.
+        _verifyAndConsumeQuote(
+            funderAddr,
+            buyerSigner,
+            int256(uint256(size)),
+            premium,
+            validTillTimestamp,
+            signature
+        );
+
         // Seller acquires a short position; returns units that required new collateral.
         uint256 physicalSize = _addShort(seller, size);
         if (physicalSize > 0) {
@@ -324,11 +299,7 @@ contract OPair is ReentrancyGuardTransient {
         IFunderBase(funderAddr).requestFunds(
             buyerSigner,
             address(cashToken),
-            premium,
-            int256(uint256(size)), // positive = buy intent
-            premium, // acquireAmount == amount: premium is always paid in full
-            validTillTimestamp,
-            signature
+            premium
         );
         if (cashToken.balanceOf(address(this)) - cashBefore != premium)
             revert PremiumUnderpaid();
@@ -368,6 +339,16 @@ contract OPair is ReentrancyGuardTransient {
 
         address buyer = msg.sender;
 
+        // Verify and consume the seller's quote signature.
+        _verifyAndConsumeQuote(
+            sellerFunderAddr,
+            sellerSigner,
+            -int256(uint256(size)),
+            premium,
+            validTillTimestamp,
+            signature
+        );
+
         // Buyer acquires a long position.
         uint256 buyerNetted = _addLong(buyer, size);
 
@@ -378,11 +359,7 @@ contract OPair is ReentrancyGuardTransient {
         IFunderBase(sellerFunderAddr).requestFunds(
             sellerSigner,
             address(depositToken),
-            premium,
-            -int256(uint256(size)), // negative = sell intent
-            acquireAmt, // actual collateral transfer (0 when fully netted)
-            validTillTimestamp,
-            signature
+            acquireAmt
         );
         if (depositToken.balanceOf(address(this)) - depositBefore != acquireAmt)
             revert CollateralUnderpaid();
@@ -559,6 +536,32 @@ contract OPair is ReentrancyGuardTransient {
     // =========================================================================
     // Internal helpers
     // =========================================================================
+
+    /// @dev Verifies an EIP-712 Quote signature against the signer's current nonce,
+    ///      then increments the nonce. Reverts with InvalidSignature on mismatch.
+    ///      The `funder` address is part of the signed struct, preventing fake-funder attacks.
+    function _verifyAndConsumeQuote(
+        address funder,
+        address signer,
+        int256 size,
+        uint256 premium,
+        uint256 validTillTimestamp,
+        bytes calldata signature
+    ) internal {
+        uint256 currentNonce = nonces[signer];
+        if (
+            _recoverSigner(
+                funder,
+                address(this),
+                size,
+                premium,
+                validTillTimestamp,
+                currentNonce,
+                signature
+            ) != signer
+        ) revert InvalidSignature();
+        nonces[signer] = currentNonce + 1;
+    }
 
     // Add `size` units of long position to `user`.
     // If user is currently short, their opposing short is netted first:

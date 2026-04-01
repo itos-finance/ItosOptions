@@ -4,8 +4,13 @@ pragma solidity ^0.8.34;
 /// @title IFunderBase
 /// @notice Shared interface implemented by both Funder and MultiFunder.
 ///         OPair depends only on this for deposit and requestFunds calls.
+///
+///         Signature verification and nonce management have moved to OPair.
+///         Funders now simply transfer funds when called by a valid vault.
 interface IFunderBase {
     // --- Events ---
+    event FactoryUpdated(address indexed factory);
+
     /// @param signer  The signer credited. For Funder (shared pool) this is informational only.
     event FundsDeposited(
         address indexed signer,
@@ -23,6 +28,10 @@ interface IFunderBase {
         uint256 amount
     );
 
+    // --- Admin ---
+    /// @notice Update the factory address. Only callable by DEFAULT_ADMIN_ROLE.
+    function setFactory(address _factory) external;
+
     // --- Token management ---
     /// @notice Deposit `amount` of `token` from msg.sender, crediting `signer`.
     ///         For Funder (shared pool) `signer` is informational; for MultiFunder it
@@ -34,40 +43,19 @@ interface IFunderBase {
     function withdraw(address token, uint256 amount) external;
 
     // --- Vault interface ---
-    /// @notice Verify a Quote signature and transfer `acquireAmount` of `token` to the caller.
+    /// @notice Transfer `acquireAmount` of `token` to the calling vault (msg.sender).
+    ///         OPair has already verified the signer's signature and consumed their nonce
+    ///         before calling this. Funders only need to check that the caller is a valid
+    ///         vault (factory.isPair) and that funds are available.
     ///
-    /// @param amount        Total premium the signer committed to. Part of the signed digest.
-    /// @param size          Signed notional trade size (risk-token units). Positive = buy intent,
-    ///                      negative = sell intent. Part of the signed digest.
-    /// @param acquireAmount Actual tokens to transfer to the vault. May be less than `amount` when
-    ///                      netting reduces the physical collateral needed, or zero for a fully-netted
-    ///                      trade. The signature is still verified regardless.
+    /// @param signer        The signer whose funds are being used. For MultiFunder this
+    ///                      determines which per-signer balance to debit.
+    /// @param token         Token to transfer.
+    /// @param acquireAmount Actual tokens to transfer to the vault. May be zero for a
+    ///                      fully-netted trade (no physical collateral movement needed).
     function requestFunds(
         address signer,
         address token,
-        uint256 amount,
-        int256 size,
-        uint256 acquireAmount,
-        uint256 validTillTimestamp,
-        bytes calldata signature
+        uint256 acquireAmount
     ) external;
-
-    // --- Nonce management ---
-    /// @notice Advance the caller's own nonce for `vault` by `amount`, invalidating all prior signatures.
-    ///         Self-service: only msg.sender's nonce is affected.
-    function bumpNonce(address vault, uint256 amount) external;
-
-    event NonceBumped(
-        address indexed signer,
-        address indexed vault,
-        uint256 newNonce
-    );
-
-    // --- Getters ---
-    /// @notice Per-signer per-vault nonce. Incremented on each successful requestFunds.
-    function nonces(
-        address signer,
-        address vault
-    ) external view returns (uint256);
-    // DOMAIN_SEPARATOR and QUOTE_TYPEHASH are public state variables on FundingVerifier.
 }

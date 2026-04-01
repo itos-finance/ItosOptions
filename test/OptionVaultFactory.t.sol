@@ -7,6 +7,7 @@ import {
 } from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {OPairFactory} from "../src/OPairFactory.sol";
 import {OPair} from "../src/OPair.sol";
+import {IOPair} from "../src/interfaces/IOPair.sol";
 import {MockERC20} from "./mocks/MockERC20.sol";
 
 contract OPairFactoryTest is Test {
@@ -152,16 +153,8 @@ contract OPairFactoryTest is Test {
 
     function test_createPair_emitsPairCreated() public {
         vm.prank(admin);
-        vm.expectEmit(false, true, true, true);
-        emit OPairFactory.PairCreated(
-            address(0),
-            address(weth),
-            address(usdc),
-            STRIKE,
-            EXPIRY,
-            true,
-            MIN_DEPOSIT
-        );
+        vm.expectEmit(false, false, false, false);
+        emit OPairFactory.PairCreated(address(0));
         factory.createPair(
             address(weth),
             address(usdc),
@@ -238,7 +231,7 @@ contract OPairFactoryTest is Test {
         // Expiry is in the future but less than 4 hours away — deposit deadline would already be in the past.
         uint256 tooSoon = block.timestamp + 3 hours;
         vm.prank(admin);
-        vm.expectRevert(OPair.ExpiryTooSoon.selector);
+        vm.expectRevert(IOPair.ExpiryTooSoon.selector);
         factory.createPair(
             address(weth),
             address(usdc),

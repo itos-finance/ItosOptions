@@ -22,15 +22,7 @@ contract OPairFactory is AccessControl {
 
     // Lookup: keccak256(riskToken, cashToken, strike, expiry, isCall) → pair address.
     mapping(bytes32 => address) public pairs;
-    event PairCreated(
-        address indexed pair,
-        address indexed riskToken,
-        address indexed cashToken,
-        uint128 strike,
-        uint256 expiry,
-        bool isCall,
-        uint128 minDepositSize
-    );
+    event PairCreated(address indexed pair);
 
     error ZeroAddress();
     error SameToken();
@@ -78,14 +70,6 @@ contract OPairFactory is AccessControl {
         pairs[key] = pair;
         isPair[pair] = true;
 
-        emit PairCreated(
-            pair,
-            riskToken,
-            cashToken,
-            strike,
-            expiry,
-            isCall,
-            minDepositSize
-        );
+        emit PairCreated(pair);
     }
 }

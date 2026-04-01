@@ -92,7 +92,8 @@ abstract contract Setup is Test {
     bytes32 private constant _QUOTE_TYPEHASH =
         keccak256("Quote(address funder,int256 size,address vault,uint256 premium,uint256 validTillTimestamp,uint256 nonce)");
 
-    /// @dev Build an EIP-712 digest matching FundingVerifier._buildDigest.
+    /// @dev Build an EIP-712 digest matching OPair._verifyAndConsumeQuote.
+    ///      The verifyingContract is the vault (OPair), not the funder.
     ///      Positive size = buy intent, negative size = sell intent.
     function _buildDigest(
         address funderAddr,
@@ -104,10 +105,10 @@ abstract contract Setup is Test {
     ) internal view returns (bytes32) {
         bytes32 domainSeparator = keccak256(abi.encode(
             _DOMAIN_TYPEHASH,
-            keccak256("MonasteryFunder"),
+            keccak256("OPair"),
             keccak256("1"),
             block.chainid,
-            funderAddr
+            vaultAddr
         ));
         bytes32 structHash = keccak256(abi.encode(
             _QUOTE_TYPEHASH,
@@ -164,7 +165,7 @@ abstract contract Setup is Test {
 
         usdc.mint(address(funder), premium);
 
-        uint256 nonce = funder.nonces(mm, address(pair));
+        uint256 nonce = pair.nonces(mm);
         uint256 validTill = block.timestamp + 1 hours;
         // mm is buyer → positive size
         bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, int256(uint256(size)), premium, validTill, nonce);
@@ -192,7 +193,7 @@ abstract contract Setup is Test {
         // Fund funder's pool with the collateral it will transfer
         MockERC20(address(pair.depositToken())).mint(address(funder), depositAmt);
 
-        uint256 nonce = funder.nonces(mm, address(pair));
+        uint256 nonce = pair.nonces(mm);
         uint256 validTill = block.timestamp + 1 hours;
         // mm is seller → negative size
         bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, -int256(uint256(size)), premium, validTill, nonce);

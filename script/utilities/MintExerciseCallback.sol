@@ -2,7 +2,7 @@
 pragma solidity ^0.8.34;
 
 import {IERC20} from "forge-std/interfaces/IERC20.sol";
-import {IExerciseCallback} from "./interfaces/IExerciseCallback.sol";
+import {IExerciseCallback} from "../../src/interfaces/IExerciseCallback.sol";
 
 /// @notice Minimal interface for MockERC20's permissionless mint.
 interface IMintable {
