@@ -9,7 +9,7 @@ pragma solidity ^0.8.34;
 ///         Size sign encodes intent: positive = buy (bid), negative = sell (offer).
 ///
 /// @dev The stored signatures can be used directly with OPair.sell / OPair.buy.
-///      Signatures commit to the total premium for the entire size.
+///      Signatures commit to premiumPerUnit (rate per 1e18 units of size), not the total premium.
 interface IBulletin {
     // --- Structs ---
 

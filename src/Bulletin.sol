@@ -7,9 +7,9 @@ import {IBulletin} from "./interfaces/IBulletin.sol";
 import {IOPairFactory} from "./interfaces/IOPairFactory.sol";
 
 /// @title Bulletin
-/// @notice On-chain order book for OPair orders. Inherits FundingVerifier so that
-///         the EIP-712 signing procedure is identical to the one used in requestFunds — a
-///         signature posted here can be passed directly to OPair.sell / OPair.buy.
+/// @notice On-chain order book for OPair orders. Inherits SigVerifier so that
+///         the EIP-712 signing procedure is identical to the one used in OPair —
+///         a signature posted here can be passed directly to OPair.sell / OPair.buy.
 ///
 ///         Size sign encodes intent: positive = bid (buy), negative = offer (sell).
 ///         Orders are stored at (vault, signer, nonce), so a signer can queue orders

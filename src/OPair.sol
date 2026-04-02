@@ -549,6 +549,7 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
         uint256 fees = totalFees;
         totalFees = 0;
         cashToken.safeTransfer(recipient, fees);
+        emit FeesClaimed(recipient, fees);
     }
 
     // =========================================================================
@@ -585,7 +586,7 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
 
     // Add `size` units of long position to `user`.
     // If user is currently short, their opposing short is netted first:
-    //   - sellToken burned for the netted amount
+    //   - netPosition adjusted (OShortToken balance decreases accordingly, as it derives from netPosition)
     //   - settled collateral stored for claimSettled()
     //   - totalSold and totalExercised decremented
     // Returns the number of units that were netted from an existing short.
@@ -604,7 +605,8 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
 
     // Add `size` units of short position to `user`.
     // If user is currently long, their opposing long is netted first:
-    //   - buyToken burned for the netted amount (no collateral required for that portion)
+    //   - netPosition adjusted (OLongToken balance decreases accordingly, as it derives from netPosition)
+    //   - no collateral required for the netted portion
     // Returns the number of units requiring new physical collateral deposit.
     // The calling functions add to totals based on the additional short.
     function _addShort(

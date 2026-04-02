@@ -634,6 +634,8 @@ contract OPairTest is Setup {
         uint256 adminUsdcBefore = usdc.balanceOf(admin);
 
         vm.prank(admin);
+        vm.expectEmit(true, false, false, true);
+        emit IOPair.FeesClaimed(admin, expectedFee);
         pair.claimFees(admin);
         assertEq(usdc.balanceOf(admin) - adminUsdcBefore, expectedFee);
         assertEq(pair.totalFees(), 0);

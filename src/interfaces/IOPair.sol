@@ -81,6 +81,7 @@ interface IOPair {
     event DepositDeadlineUpdated(uint256 newDeadline);
     event ExerciseEarliestUpdated(uint256 newEarliest);
     event NonceBumped(address indexed signer, uint256 newNonce);
+    event FeesClaimed(address indexed recipient, uint256 amount);
 
     // -------------------------------------------------------------------------
     // Immutables / constants
