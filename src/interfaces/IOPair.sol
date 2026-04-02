@@ -60,9 +60,23 @@ interface IOPair {
         uint256 sellerNetted
     );
     event Exercised(address indexed buyer, uint128 size);
-    event Claimed(address indexed seller, uint256 depositOut, uint256 swapOut);
-    event SettledClaimed(address indexed account, uint256 depositOut, uint256 swapOut);
-    event Netted(address indexed account, uint256 depositSettled, uint256 swapSettled);
+    event Claimed(
+        address indexed seller,
+        address indexed recipient,
+        uint256 depositOut,
+        uint256 swapOut
+    );
+    event SettledClaimed(
+        address indexed account,
+        address indexed recipient,
+        uint256 depositOut,
+        uint256 swapOut
+    );
+    event Netted(
+        address indexed account,
+        uint256 depositSettled,
+        uint256 swapSettled
+    );
     event ExpiryExtended(uint256 newExpiry);
     event DepositDeadlineUpdated(uint256 newDeadline);
     event ExerciseEarliestUpdated(uint256 newEarliest);
@@ -90,7 +104,9 @@ interface IOPair {
     function depositDeadline() external view returns (uint256);
     function exerciseEarliest() external view returns (uint256);
     function netPosition(address account) external view returns (int256);
-    function settledDepositToken(address account) external view returns (uint256);
+    function settledDepositToken(
+        address account
+    ) external view returns (uint256);
     function settledSwapToken(address account) external view returns (uint256);
     function totalSold() external view returns (uint256);
     function totalExercised() external view returns (uint256);
@@ -124,11 +140,15 @@ interface IOPair {
         bytes calldata signature
     ) external;
 
-    function exercise(uint128 size, address callbackContract, bytes calldata data) external;
+    function exercise(
+        uint128 size,
+        address callbackContract,
+        bytes calldata data
+    ) external;
 
-    function claim(uint128 size, bool preferExercised) external;
+    function claim(address recipient, uint128 size, bool preferExercised) external;
 
-    function claimSettled() external;
+    function claimSettled(address recipient) external;
 
     // -------------------------------------------------------------------------
     // Admin (factory owner)
@@ -136,5 +156,5 @@ interface IOPair {
     function extendExpiry(uint256 newExpiry) external;
     function setDepositDeadline(uint256 newDeadline) external;
     function setExerciseEarliest(uint256 newEarliest) external;
-    function claimFees() external;
+    function claimFees(address recipient) external;
 }

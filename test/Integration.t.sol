@@ -36,14 +36,14 @@ contract IntegrationTest is Setup {
         vm.warp(expiryTimestamp);
         uint256 usdcBefore = usdc.balanceOf(seller);
         vm.prank(seller);
-        pair.claim(size, false);
+        pair.claim(seller, size, false);
         uint256 expectedUsdc = (uint256(size) * STRIKE) / 1e18;
         assertEq(usdc.balanceOf(seller) - usdcBefore, expectedUsdc);
 
         // 4. Admin claims fees
         uint256 fee = (uint256(premium) * pair.FEE_BPS()) / pair.BPS();
         vm.prank(admin);
-        pair.claimFees();
+        pair.claimFees(admin);
         assertEq(usdc.balanceOf(admin), fee);
     }
 
@@ -67,7 +67,7 @@ contract IntegrationTest is Setup {
 
         vm.warp(expiryTimestamp);
         vm.prank(seller);
-        putPair.claim(size, false);
+        putPair.claim(seller, size, false);
 
         // Seller gets swap token (WETH) for exercised portion
         assertEq(weth.balanceOf(seller), size);
@@ -84,7 +84,7 @@ contract IntegrationTest is Setup {
         vm.warp(expiryTimestamp);
         uint256 wethBefore = weth.balanceOf(seller);
         vm.prank(seller);
-        pair.claim(2e18, false);
+        pair.claim(seller, 2e18, false);
         assertEq(weth.balanceOf(seller) - wethBefore, 2e18);
     }
 
@@ -109,13 +109,13 @@ contract IntegrationTest is Setup {
 
         // seller1: claim 3e18 preferring exercised
         vm.prank(seller);
-        pair.claim(3e18, true);
+        pair.claim(seller, 3e18, true);
         assertGt(usdc.balanceOf(seller), 0);
 
         // seller2: claim 2e18 — fully unexercised (prefer unexercised)
         uint256 wethBefore = weth.balanceOf(seller2);
         vm.prank(seller2);
-        pair.claim(2e18, false);
+        pair.claim(seller2, 2e18, false);
         assertEq(weth.balanceOf(seller2) - wethBefore, 2e18);
     }
 
@@ -137,7 +137,7 @@ contract IntegrationTest is Setup {
         // seller1 claims 3e18, preferring exercised → fully exercised
         uint256 usdcBefore1 = usdc.balanceOf(seller);
         vm.prank(seller);
-        pair.claim(3e18, true);
+        pair.claim(seller, 3e18, true);
         uint256 seller1Usdc = (uint256(3e18) * STRIKE) / 1e18;
         assertEq(usdc.balanceOf(seller) - usdcBefore1, seller1Usdc);
 
@@ -145,7 +145,7 @@ contract IntegrationTest is Setup {
         uint256 usdcBefore2 = usdc.balanceOf(seller2);
         uint256 wethBefore2 = weth.balanceOf(seller2);
         vm.prank(seller2);
-        pair.claim(2e18, true);
+        pair.claim(seller2, 2e18, true);
         assertEq(
             usdc.balanceOf(seller2) - usdcBefore2,
             (uint256(1e18) * STRIKE) / 1e18
@@ -190,7 +190,16 @@ contract IntegrationTest is Setup {
                 0
             );
             vm.prank(seller2);
-            pair.sell(address(funder2), mm2, 3e18, 3e18, 100e6, validTill, true, sig);
+            pair.sell(
+                address(funder2),
+                mm2,
+                3e18,
+                3e18,
+                100e6,
+                validTill,
+                true,
+                sig
+            );
         }
 
         assertEq(pair.netPosition(mm), int256(2e18));
@@ -224,7 +233,7 @@ contract IntegrationTest is Setup {
         // mm claims after expiry
         vm.warp(expiryTimestamp);
         vm.prank(mm);
-        pair.claim(size, false);
+        pair.claim(mm, size, false);
         // mm gets swap token (USDC for call) for exercised portion
         assertGt(usdc.balanceOf(mm), 0);
     }
@@ -264,11 +273,20 @@ contract IntegrationTest is Setup {
         );
 
         vm.prank(buyer);
-        pair.buy(address(multiFunder), mm, size, size, premium, validTill, true, sig);
+        pair.buy(
+            address(multiFunder),
+            mm,
+            size,
+            size,
+            premium,
+            validTill,
+            true,
+            sig
+        );
 
-        assertEq(pair.netPosition(buyer), int256(uint256(size)));  // buyer is long
-        assertEq(pair.netPosition(mm),    -int256(uint256(size))); // mm is short
-        assertEq(weth.balanceOf(address(pair)), size);             // collateral locked
+        assertEq(pair.netPosition(buyer), int256(uint256(size))); // buyer is long
+        assertEq(pair.netPosition(mm), -int256(uint256(size))); // mm is short
+        assertEq(weth.balanceOf(address(pair)), size); // collateral locked
 
         // premium minus fee deposited back to mm's multiFunder balance
         uint256 fee = (uint256(premium) * pair.FEE_BPS()) / pair.BPS();
@@ -306,7 +324,16 @@ contract IntegrationTest is Setup {
         );
 
         vm.prank(seller);
-        pair.sell(address(multiFunder), mm, size, size, premium, validTill, true, sig);
+        pair.sell(
+            address(multiFunder),
+            mm,
+            size,
+            size,
+            premium,
+            validTill,
+            true,
+            sig
+        );
 
         assertEq(pair.netPosition(mm), int256(uint256(size)));
         assertEq(multiFunder.balances(mm, address(usdc)), 0); // premium consumed
@@ -350,7 +377,7 @@ contract IntegrationTest is Setup {
         OPair pair = _createCallPair();
         uint128 size = 2e18;
         uint128 premiumPerUnit = 100e6; // 100 USDC per 1e18 units → 200 USDC total for 2e18
-        uint256 totalPremium = uint256(premiumPerUnit) * uint256(size) / 1e18;
+        uint256 totalPremium = (uint256(premiumPerUnit) * uint256(size)) / 1e18;
         uint256 validTill = block.timestamp + 2 hours;
         int256 signedSize = int256(uint256(size)); // positive = buy intent
 

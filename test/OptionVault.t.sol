@@ -566,7 +566,7 @@ contract OPairTest is Setup {
 
         uint256 wethBefore = weth.balanceOf(seller);
         vm.prank(seller);
-        pair.claim(1e18, false);
+        pair.claim(seller, 1e18, false);
         assertEq(weth.balanceOf(seller) - wethBefore, 1e18);
     }
 
@@ -581,7 +581,7 @@ contract OPairTest is Setup {
         vm.warp(expiryTimestamp);
         uint256 usdcBefore = usdc.balanceOf(seller);
         vm.prank(seller);
-        pair.claim(1e18, false);
+        pair.claim(seller, 1e18, false);
         assertEq(
             usdc.balanceOf(seller) - usdcBefore,
             (uint256(1e18) * STRIKE) / 1e18
@@ -593,7 +593,7 @@ contract OPairTest is Setup {
 
         vm.prank(seller);
         vm.expectRevert(IOPair.NotExpired.selector);
-        pair.claim(1e18, false);
+        pair.claim(seller, 1e18, false);
     }
 
     function test_claim_revertsInsufficientShortPosition() public {
@@ -602,14 +602,14 @@ contract OPairTest is Setup {
 
         vm.prank(seller);
         vm.expectRevert(IOPair.InsufficientShortPosition.selector);
-        pair.claim(2e18, false);
+        pair.claim(seller, 2e18, false);
     }
 
     function test_claim_revertsZeroSize() public {
         vm.warp(expiryTimestamp);
         vm.prank(seller);
         vm.expectRevert(IOPair.ZeroSize.selector);
-        pair.claim(0, false);
+        pair.claim(seller, 0, false);
     }
 
     function test_claim_emitsClaimed() public {
@@ -617,9 +617,9 @@ contract OPairTest is Setup {
         vm.warp(expiryTimestamp);
 
         vm.prank(seller);
-        vm.expectEmit(true, false, false, true);
-        emit IOPair.Claimed(seller, 1e18, 0); // fully unexercised: fromUnexercised=1e18, fromExercised=0
-        pair.claim(1e18, false);
+        vm.expectEmit(true, true, false, true);
+        emit IOPair.Claimed(seller, seller, 1e18, 0); // fully unexercised: fromUnexercised=1e18, fromExercised=0
+        pair.claim(seller, 1e18, false);
     }
 
     // =========================================================================
@@ -634,7 +634,7 @@ contract OPairTest is Setup {
         uint256 adminUsdcBefore = usdc.balanceOf(admin);
 
         vm.prank(admin);
-        pair.claimFees();
+        pair.claimFees(admin);
         assertEq(usdc.balanceOf(admin) - adminUsdcBefore, expectedFee);
         assertEq(pair.totalFees(), 0);
     }
@@ -645,7 +645,7 @@ contract OPairTest is Setup {
 
         vm.prank(seller);
         vm.expectRevert(IOPair.NotFactoryOwner.selector);
-        pair.claimFees();
+        pair.claimFees(seller);
     }
 
     function test_claimFees_revertsBeforeExpiry() public {
@@ -653,7 +653,7 @@ contract OPairTest is Setup {
 
         vm.prank(admin);
         vm.expectRevert(IOPair.NotExpired.selector);
-        pair.claimFees();
+        pair.claimFees(admin);
     }
 
     // =========================================================================
@@ -841,7 +841,7 @@ contract OPairTest is Setup {
     function test_claimSettled_revertsNothingToSettle() public {
         vm.prank(seller);
         vm.expectRevert(IOPair.NothingToSettle.selector);
-        pair.claimSettled();
+        pair.claimSettled(seller);
     }
 
     function test_claimSettled_afterNetFromLong() public {
@@ -906,7 +906,7 @@ contract OPairTest is Setup {
         // mm can claim their settled collateral
         uint256 wethBefore = weth.balanceOf(mm);
         vm.prank(mm);
-        pair2.claimSettled();
+        pair2.claimSettled(mm);
         assertGt(weth.balanceOf(mm) - wethBefore, 0);
     }
 

@@ -215,7 +215,8 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
         swapToken = _isCall ? IERC20(_cashToken) : IERC20(_riskToken);
         depositDeadline = _expiry - DEFAULT_DEPOSIT_DEADLINE;
         // It'd be strange to create a contract that had a small deposit window.
-        require(block.timestamp + 1 hours < depositDeadline, ExpiryTooSoon());
+        if (block.timestamp + 1 hours >= depositDeadline)
+            revert ExpiryTooSoon();
         exerciseEarliest = block.timestamp + DEFAULT_EXERCISE_BUFFER;
         DOMAIN_SEPARATOR = _domainSeparatorFor(address(this));
 
@@ -454,7 +455,11 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
     // preferExercised=false: take from unexercised pool first (deposit tokens), then exercised.
     //
     // Pre-settled amounts from netting are NOT included here; use claimSettled().
-    function claim(uint128 size, bool preferExercised) external afterExpiry {
+    function claim(
+        address recipient,
+        uint128 size,
+        bool preferExercised
+    ) external afterExpiry {
         if (size == 0) revert ZeroSize();
         if (netPosition[msg.sender] > -int256(uint256(size)))
             revert InsufficientShortPosition();
@@ -483,18 +488,17 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
         }
 
         if (fromUnexercised > 0)
-            depositToken.safeTransfer(msg.sender, fromUnexercised);
-        if (fromExercised > 0)
-            swapToken.safeTransfer(msg.sender, fromExercised);
+            depositToken.safeTransfer(recipient, fromUnexercised);
+        if (fromExercised > 0) swapToken.safeTransfer(recipient, fromExercised);
 
-        emit Claimed(msg.sender, fromUnexercised, fromExercised);
+        emit Claimed(msg.sender, recipient, fromUnexercised, fromExercised);
     }
 
     // -------------------------------------------------------------------------
     // Claim settled
     // -------------------------------------------------------------------------
     // Claimable any time – returns collateral pre-settled from mid-trade netting.
-    function claimSettled() external {
+    function claimSettled(address recipient) external {
         uint256 depAmt = settledDepositToken[msg.sender];
         uint256 swapAmt = settledSwapToken[msg.sender];
         if (depAmt == 0 && swapAmt == 0) revert NothingToSettle();
@@ -507,10 +511,10 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
         } else {
             depAmt = _cashAmount(depAmt, false);
         }
-        if (depAmt > 0) depositToken.safeTransfer(msg.sender, depAmt);
-        if (swapAmt > 0) swapToken.safeTransfer(msg.sender, swapAmt);
+        if (depAmt > 0) depositToken.safeTransfer(recipient, depAmt);
+        if (swapAmt > 0) swapToken.safeTransfer(recipient, swapAmt);
 
-        emit SettledClaimed(msg.sender, depAmt, swapAmt);
+        emit SettledClaimed(msg.sender, recipient, depAmt, swapAmt);
     }
 
     // -------------------------------------------------------------------------
@@ -539,10 +543,12 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
     // -------------------------------------------------------------------------
     // Claim fees
     // -------------------------------------------------------------------------
-    function claimFees() external onlyFactoryOwner afterExpiry {
+    function claimFees(
+        address recipient
+    ) external onlyFactoryOwner afterExpiry {
         uint256 fees = totalFees;
         totalFees = 0;
-        cashToken.safeTransfer(msg.sender, fees);
+        cashToken.safeTransfer(recipient, fees);
     }
 
     // =========================================================================
