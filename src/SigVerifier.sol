@@ -14,13 +14,14 @@ import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 abstract contract SigVerifier {
     error InvalidSignature();
 
-    /// @dev Quote(address funder,int256 size,address vault,uint256 premiumPerUnit,
-    ///           uint256 validTillTimestamp,uint256 nonce)
+    /// @dev Quote(address funder,address vault,int256 size,uint256 premiumPerUnit,
+    ///           uint256 validTillTimestamp,bool allowPartialFill,uint256 nonce)
     ///      Positive size = buy intent, negative size = sell intent.
     ///      premiumPerUnit is the premium per 1e18 units of size (rate, not total).
+    ///      allowPartialFill: if false, the fill must equal size exactly.
     bytes32 public constant QUOTE_TYPEHASH =
         keccak256(
-            "Quote(address funder,int256 size,address vault,uint256 premiumPerUnit,uint256 validTillTimestamp,uint256 nonce)"
+            "Quote(address funder,address vault,int256 size,uint256 premiumPerUnit,uint256 validTillTimestamp,bool allowPartialFill,uint256 nonce)"
         );
 
     bytes32 private constant _DOMAIN_TYPEHASH =
@@ -36,15 +37,17 @@ abstract contract SigVerifier {
         int256 size,
         uint256 premiumPerUnit,
         uint256 validTillTimestamp,
-        uint256 nonce
+        uint256 nonce,
+        bool allowPartialFill
     ) internal view returns (bytes32) {
         bytes32 structHash = keccak256(abi.encode(
             QUOTE_TYPEHASH,
             funder,
-            size,
             vault,
+            size,
             premiumPerUnit,
             validTillTimestamp,
+            allowPartialFill,
             nonce
         ));
         return keccak256(abi.encodePacked(
@@ -62,10 +65,11 @@ abstract contract SigVerifier {
         uint256 premiumPerUnit,
         uint256 validTillTimestamp,
         uint256 nonce,
+        bool allowPartialFill,
         bytes calldata signature
     ) internal view returns (address) {
         return ECDSA.recover(
-            _buildDigest(funder, vault, size, premiumPerUnit, validTillTimestamp, nonce),
+            _buildDigest(funder, vault, size, premiumPerUnit, validTillTimestamp, nonce, allowPartialFill),
             signature
         );
     }

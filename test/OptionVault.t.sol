@@ -57,12 +57,13 @@ contract OPairTest is Setup {
             int256(1e18),
             100e6,
             expiryTimestamp + 1,
+            true,
             0
         );
 
         vm.prank(seller);
         vm.expectRevert(IOPair.DepositWindowClosed.selector);
-        pair.sell(address(funder), mm, 1e18, 1e18, 100e6, expiryTimestamp + 1, sig);
+        pair.sell(address(funder), mm, 1e18, 1e18, 100e6, expiryTimestamp + 1, true, sig);
     }
 
     function test_sell_revertsExpiredQuote() public {
@@ -79,18 +80,19 @@ contract OPairTest is Setup {
             int256(1e18),
             100e6,
             pastTime,
+            true,
             0
         );
 
         vm.prank(seller);
         vm.expectRevert(IOPair.QuoteExpired.selector);
-        pair.sell(address(funder), mm, 1e18, 1e18, 100e6, pastTime, sig);
+        pair.sell(address(funder), mm, 1e18, 1e18, 100e6, pastTime, true, sig);
     }
 
     function test_sell_revertsZeroSize() public {
         vm.prank(seller);
         vm.expectRevert(IOPair.ZeroSize.selector);
-        pair.sell(address(funder), mm, 0, 0, 100e6, block.timestamp + 1, hex"");
+        pair.sell(address(funder), mm, 0, 0, 100e6, block.timestamp + 1, true, hex"");
     }
 
     function test_sell_revertsBelowMinDeposit() public {
@@ -107,12 +109,13 @@ contract OPairTest is Setup {
             int256(uint256(tinySize)),
             1e6,
             block.timestamp + 1,
+            true,
             0
         );
 
         vm.prank(seller);
         vm.expectRevert(IOPair.BelowMinDeposit.selector);
-        pair.sell(address(funder), mm, tinySize, tinySize, 1e6, block.timestamp + 1, sig);
+        pair.sell(address(funder), mm, tinySize, tinySize, 1e6, block.timestamp + 1, true, sig);
     }
 
     function test_sell_exactlyMinDeposit_succeeds() public {
@@ -122,9 +125,9 @@ contract OPairTest is Setup {
         weth.approve(address(pair), size);
         usdc.mint(address(funder), 1);
 
-        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, int256(uint256(size)), 1, block.timestamp + 1, 0);
+        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, int256(uint256(size)), 1, block.timestamp + 1, true, 0);
         vm.prank(seller);
-        pair.sell(address(funder), mm, size, size, 1, block.timestamp + 1, sig);
+        pair.sell(address(funder), mm, size, size, 1, block.timestamp + 1, true, sig);
         assertEq(pair.totalSold(), size);
     }
 
@@ -145,13 +148,85 @@ contract OPairTest is Setup {
             int256(uint256(size)),
             premium,
             validTill,
+            true,
             0
         );
 
         vm.prank(seller);
         vm.expectEmit(true, true, false, true);
         emit IOPair.Sold(seller, mm, size, premium, 0, 0);
-        pair.sell(address(funder), mm, size, size, premium, validTill, sig);
+        pair.sell(address(funder), mm, size, size, premium, validTill, true, sig);
+    }
+
+    function test_sell_partialFill_succeeds_whenAllowed() public {
+        uint128 size = 2e18;
+        uint128 fill = 1e18;
+        uint128 premiumPerUnit = 100e6; // 100 USDC per 1e18 units
+        uint256 validTill = block.timestamp + 1 hours;
+
+        weth.mint(seller, fill);
+        vm.prank(seller);
+        weth.approve(address(pair), fill);
+        usdc.mint(address(funder), premiumPerUnit); // 100e6 * 1e18 / 1e18 = 100e6
+
+        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, int256(uint256(size)), premiumPerUnit, validTill, true, 0);
+        vm.prank(seller);
+        pair.sell(address(funder), mm, size, fill, premiumPerUnit, validTill, true, sig);
+
+        assertEq(pair.totalSold(), fill);
+        assertEq(pair.netPosition(seller), -int256(uint256(fill)));
+        assertEq(pair.netPosition(mm), int256(uint256(fill)));
+    }
+
+    function test_sell_partialFill_reverts_whenNotAllowed() public {
+        uint128 size = 2e18;
+        uint128 fill = 1e18;
+        uint128 premiumPerUnit = 100e6;
+        uint256 validTill = block.timestamp + 1 hours;
+
+        weth.mint(seller, fill);
+        vm.prank(seller);
+        weth.approve(address(pair), fill);
+        usdc.mint(address(funder), premiumPerUnit);
+
+        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, int256(uint256(size)), premiumPerUnit, validTill, false, 0);
+        vm.prank(seller);
+        vm.expectRevert(IOPair.PartialFillNotAllowed.selector);
+        pair.sell(address(funder), mm, size, fill, premiumPerUnit, validTill, false, sig);
+    }
+
+    function test_sell_fullFill_succeeds_whenPartialFillNotAllowed() public {
+        uint128 size = 1e18;
+        uint128 premiumPerUnit = 100e6;
+        uint256 validTill = block.timestamp + 1 hours;
+
+        weth.mint(seller, size);
+        vm.prank(seller);
+        weth.approve(address(pair), size);
+        usdc.mint(address(funder), premiumPerUnit);
+
+        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, int256(uint256(size)), premiumPerUnit, validTill, false, 0);
+        vm.prank(seller);
+        pair.sell(address(funder), mm, size, size, premiumPerUnit, validTill, false, sig);
+
+        assertEq(pair.totalSold(), size);
+    }
+
+    function test_sell_wrongAllowPartialFill_revertsInvalidSignature() public {
+        uint128 size = 1e18;
+        uint128 premiumPerUnit = 100e6;
+        uint256 validTill = block.timestamp + 1 hours;
+
+        weth.mint(seller, size);
+        vm.prank(seller);
+        weth.approve(address(pair), size);
+        usdc.mint(address(funder), premiumPerUnit);
+
+        // Sign with allowPartialFill = true, but call with false
+        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, int256(uint256(size)), premiumPerUnit, validTill, true, 0);
+        vm.prank(seller);
+        vm.expectRevert(SigVerifier.InvalidSignature.selector);
+        pair.sell(address(funder), mm, size, size, premiumPerUnit, validTill, false, sig);
     }
 
     // =========================================================================
@@ -191,18 +266,19 @@ contract OPairTest is Setup {
             -int256(1e18),
             1e18,
             expiryTimestamp + 1,
+            true,
             0
         );
 
         vm.prank(buyer);
         vm.expectRevert(IOPair.DepositWindowClosed.selector);
-        pair.buy(address(funder), mm, 1e18, 1e18, 100e6, expiryTimestamp + 1, sig);
+        pair.buy(address(funder), mm, 1e18, 1e18, 100e6, expiryTimestamp + 1, true, sig);
     }
 
     function test_buy_revertsZeroSize() public {
         vm.prank(buyer);
         vm.expectRevert(IOPair.ZeroSize.selector);
-        pair.buy(address(funder), mm, 0, 0, 100e6, block.timestamp + 1, hex"");
+        pair.buy(address(funder), mm, 0, 0, 100e6, block.timestamp + 1, true, hex"");
     }
 
     function test_buy_revertsExpiredQuote() public {
@@ -213,12 +289,12 @@ contract OPairTest is Setup {
 
         bytes memory sig = _signQuote(
             address(funder), address(pair), mmPrivateKey,
-            -int256(1e18), 100e6, pastTime, 0
+            -int256(1e18), 100e6, pastTime, true, 0
         );
 
         vm.prank(buyer);
         vm.expectRevert(IOPair.QuoteExpired.selector);
-        pair.buy(address(funder), mm, 1e18, 1e18, 100e6, pastTime, sig);
+        pair.buy(address(funder), mm, 1e18, 1e18, 100e6, pastTime, true, sig);
     }
 
     function test_buy_revertsBelowMinDeposit() public {
@@ -229,12 +305,12 @@ contract OPairTest is Setup {
 
         bytes memory sig = _signQuote(
             address(funder), address(pair), mmPrivateKey,
-            -int256(uint256(tinySize)), 1e6, block.timestamp + 1, 0
+            -int256(uint256(tinySize)), 1e6, block.timestamp + 1, true, 0
         );
 
         vm.prank(buyer);
         vm.expectRevert(IOPair.BelowMinDeposit.selector);
-        pair.buy(address(funder), mm, tinySize, tinySize, 1e6, block.timestamp + 1, sig);
+        pair.buy(address(funder), mm, tinySize, tinySize, 1e6, block.timestamp + 1, true, sig);
     }
 
     function test_bumpNonce_buy_invalidatesPriorSignature() public {
@@ -250,7 +326,7 @@ contract OPairTest is Setup {
         // Seller sig valid at nonce 0
         bytes memory sig = _signQuote(
             address(funder), address(pair), mmPrivateKey,
-            -int256(uint256(size)), premium, validTill, 0
+            -int256(uint256(size)), premium, validTill, true, 0
         );
 
         // mm bumps their own nonce
@@ -260,7 +336,7 @@ contract OPairTest is Setup {
 
         vm.prank(buyer);
         vm.expectRevert(SigVerifier.InvalidSignature.selector);
-        pair.buy(address(funder), mm, size, size, premium, validTill, sig);
+        pair.buy(address(funder), mm, size, size, premium, validTill, true, sig);
     }
 
     function test_nonces_perSigner_independent() public {
@@ -279,16 +355,16 @@ contract OPairTest is Setup {
         weth.approve(address(pair), size * 2);
 
         // Consume mm's nonce 0
-        bytes memory sig1 = _signQuote(address(funder), address(pair), mmPrivateKey, int256(uint256(size)), premium, validTill, 0);
+        bytes memory sig1 = _signQuote(address(funder), address(pair), mmPrivateKey, int256(uint256(size)), premium, validTill, true, 0);
         vm.prank(seller);
-        pair.sell(address(funder), mm, size, size, premium, validTill, sig1);
+        pair.sell(address(funder), mm, size, size, premium, validTill, true, sig1);
         assertEq(pair.nonces(mm), 1);
 
         // signer2's nonce is still 0 — independent
         assertEq(pair.nonces(signer2), 0);
-        bytes memory sig2 = _signQuote(address(funder), address(pair), signer2Key, int256(uint256(size)), premium, validTill, 0);
+        bytes memory sig2 = _signQuote(address(funder), address(pair), signer2Key, int256(uint256(size)), premium, validTill, true, 0);
         vm.prank(seller);
-        pair.sell(address(funder), signer2, size, size, premium, validTill, sig2);
+        pair.sell(address(funder), signer2, size, size, premium, validTill, true, sig2);
         assertEq(pair.nonces(signer2), 1);
     }
 
@@ -311,13 +387,84 @@ contract OPairTest is Setup {
             -int256(uint256(size)),
             premium,
             validTill,
+            true,
             0
         );
 
         vm.prank(buyer);
         vm.expectEmit(true, true, false, true);
         emit IOPair.Bought(buyer, mm, size, premium, 0, 0);
-        pair.buy(address(funder), mm, size, size, premium, validTill, sig);
+        pair.buy(address(funder), mm, size, size, premium, validTill, true, sig);
+    }
+
+    function test_buy_partialFill_succeeds_whenAllowed() public {
+        uint128 size = 2e18;
+        uint128 fill = 1e18;
+        uint128 premiumPerUnit = 100e6;
+        uint256 validTill = block.timestamp + 1 hours;
+
+        usdc.mint(buyer, premiumPerUnit); // 100e6 * 1e18 / 1e18 = 100e6
+        vm.prank(buyer);
+        usdc.approve(address(pair), premiumPerUnit);
+        weth.mint(address(funder), fill);
+
+        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, -int256(uint256(size)), premiumPerUnit, validTill, true, 0);
+        vm.prank(buyer);
+        pair.buy(address(funder), mm, size, fill, premiumPerUnit, validTill, true, sig);
+
+        assertEq(pair.netPosition(buyer), int256(uint256(fill)));
+        assertEq(pair.netPosition(mm), -int256(uint256(fill)));
+    }
+
+    function test_buy_partialFill_reverts_whenNotAllowed() public {
+        uint128 size = 2e18;
+        uint128 fill = 1e18;
+        uint128 premiumPerUnit = 100e6;
+        uint256 validTill = block.timestamp + 1 hours;
+
+        usdc.mint(buyer, premiumPerUnit);
+        vm.prank(buyer);
+        usdc.approve(address(pair), premiumPerUnit);
+        weth.mint(address(funder), fill);
+
+        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, -int256(uint256(size)), premiumPerUnit, validTill, false, 0);
+        vm.prank(buyer);
+        vm.expectRevert(IOPair.PartialFillNotAllowed.selector);
+        pair.buy(address(funder), mm, size, fill, premiumPerUnit, validTill, false, sig);
+    }
+
+    function test_buy_fullFill_succeeds_whenPartialFillNotAllowed() public {
+        uint128 size = 1e18;
+        uint128 premiumPerUnit = 100e6;
+        uint256 validTill = block.timestamp + 1 hours;
+
+        usdc.mint(buyer, premiumPerUnit);
+        vm.prank(buyer);
+        usdc.approve(address(pair), premiumPerUnit);
+        weth.mint(address(funder), size);
+
+        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, -int256(uint256(size)), premiumPerUnit, validTill, false, 0);
+        vm.prank(buyer);
+        pair.buy(address(funder), mm, size, size, premiumPerUnit, validTill, false, sig);
+
+        assertEq(pair.netPosition(buyer), int256(uint256(size)));
+    }
+
+    function test_buy_wrongAllowPartialFill_revertsInvalidSignature() public {
+        uint128 size = 1e18;
+        uint128 premiumPerUnit = 100e6;
+        uint256 validTill = block.timestamp + 1 hours;
+
+        usdc.mint(buyer, premiumPerUnit);
+        vm.prank(buyer);
+        usdc.approve(address(pair), premiumPerUnit);
+        weth.mint(address(funder), size);
+
+        // Sign with allowPartialFill = false, but call with true
+        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, -int256(uint256(size)), premiumPerUnit, validTill, false, 0);
+        vm.prank(buyer);
+        vm.expectRevert(SigVerifier.InvalidSignature.selector);
+        pair.buy(address(funder), mm, size, size, premiumPerUnit, validTill, true, sig);
     }
 
     // =========================================================================
@@ -574,7 +721,7 @@ contract OPairTest is Setup {
         // New deposits are blocked
         vm.prank(seller);
         vm.expectRevert(IOPair.DepositWindowClosed.selector);
-        pair.sell(address(funder), mm, 1e18, 1e18, 100e6, block.timestamp + 1, hex"");
+        pair.sell(address(funder), mm, 1e18, 1e18, 100e6, block.timestamp + 1, true, hex"");
 
         // But exercise still works
         vm.prank(mm);
@@ -590,7 +737,7 @@ contract OPairTest is Setup {
         // Trading blocked
         vm.prank(seller);
         vm.expectRevert(IOPair.DepositWindowClosed.selector);
-        pair.sell(address(funder), mm, 1e18, 1e18, 100e6, block.timestamp + 1, hex"");
+        pair.sell(address(funder), mm, 1e18, 1e18, 100e6, block.timestamp + 1, true, hex"");
 
         // Admin extends deadline
         vm.prank(admin);
@@ -745,11 +892,12 @@ contract OPairTest is Setup {
             int256(1e18),
             100e6,
             validTill,
+            true,
             nonce
         );
 
         vm.prank(seller);
-        pair2.sell(address(funder), mm, 1e18, 1e18, 100e6, validTill, sig);
+        pair2.sell(address(funder), mm, 1e18, 1e18, 100e6, validTill, true, sig);
 
         // mm was short 1e18, now netted — settled deposit stored
         assertEq(pair2.netPosition(mm), 0);
@@ -786,6 +934,7 @@ contract OPairTest is Setup {
             int256(uint256(size)),
             premium,
             block.timestamp + 1 hours,
+            true,
             0
         );
 
@@ -797,6 +946,7 @@ contract OPairTest is Setup {
             size,
             premium,
             block.timestamp + 1 hours,
+            true,
             sig
         );
 
@@ -819,7 +969,7 @@ contract OPairTest is Setup {
         usdc.mint(address(funder), premium);
 
         // Sig valid at nonce 0
-        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, int256(uint256(size)), premium, validTill, 0);
+        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, int256(uint256(size)), premium, validTill, true, 0);
 
         vm.prank(mm);
         pair.bumpNonce(1);
@@ -828,7 +978,7 @@ contract OPairTest is Setup {
         // Nonce-0 sig now rejected
         vm.prank(seller);
         vm.expectRevert(SigVerifier.InvalidSignature.selector);
-        pair.sell(address(funder), mm, size, size, premium, validTill, sig);
+        pair.sell(address(funder), mm, size, size, premium, validTill, true, sig);
     }
 
     function test_bumpNonce_skipMultiple_onlyNewNonceWorks() public {
@@ -839,9 +989,9 @@ contract OPairTest is Setup {
         usdc.mint(address(funder), premium);
 
         // Pre-sign at nonces 0, 1, and 5
-        bytes memory sig0 = _signQuote(address(funder), address(pair), mmPrivateKey, int256(uint256(size)), premium, validTill, 0);
-        bytes memory sig1 = _signQuote(address(funder), address(pair), mmPrivateKey, int256(uint256(size)), premium, validTill, 1);
-        bytes memory sig5 = _signQuote(address(funder), address(pair), mmPrivateKey, int256(uint256(size)), premium, validTill, 5);
+        bytes memory sig0 = _signQuote(address(funder), address(pair), mmPrivateKey, int256(uint256(size)), premium, validTill, true, 0);
+        bytes memory sig1 = _signQuote(address(funder), address(pair), mmPrivateKey, int256(uint256(size)), premium, validTill, true, 1);
+        bytes memory sig5 = _signQuote(address(funder), address(pair), mmPrivateKey, int256(uint256(size)), premium, validTill, true, 5);
 
         vm.prank(mm);
         pair.bumpNonce(5);
@@ -852,15 +1002,15 @@ contract OPairTest is Setup {
         vm.prank(seller);
         weth.approve(address(pair), size);
         vm.expectRevert(SigVerifier.InvalidSignature.selector);
-        pair.sell(address(funder), mm, size, size, premium, validTill, sig0);
+        pair.sell(address(funder), mm, size, size, premium, validTill, true, sig0);
 
         vm.prank(seller);
         vm.expectRevert(SigVerifier.InvalidSignature.selector);
-        pair.sell(address(funder), mm, size, size, premium, validTill, sig1);
+        pair.sell(address(funder), mm, size, size, premium, validTill, true, sig1);
 
         // Nonce 5 is current — succeeds
         vm.prank(seller);
-        pair.sell(address(funder), mm, size, size, premium, validTill, sig5);
+        pair.sell(address(funder), mm, size, size, premium, validTill, true, sig5);
         assertEq(pair.nonces(mm), 6);
     }
 
@@ -874,7 +1024,7 @@ contract OPairTest is Setup {
         weth.approve(address(pair), size);
         usdc.mint(address(funder), premium);
 
-        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, int256(uint256(size)), premium, validTill, 0);
+        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, int256(uint256(size)), premium, validTill, true, 0);
 
         vm.prank(mm);
         pair.bumpNonce(0);
@@ -882,7 +1032,7 @@ contract OPairTest is Setup {
 
         // Nonce-0 sig still valid
         vm.prank(seller);
-        pair.sell(address(funder), mm, size, size, premium, validTill, sig);
+        pair.sell(address(funder), mm, size, size, premium, validTill, true, sig);
         assertEq(pair.nonces(mm), 1);
     }
 

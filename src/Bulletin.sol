@@ -51,6 +51,7 @@ contract Bulletin is IBulletin, SigVerifier {
                 premiumPerUnit,
                 validTillTimestamp,
                 nonce,
+                false, // Bulletin orders never allow partial fills
                 signature
             )
         ) revert InvalidSignature();
@@ -62,6 +63,7 @@ contract Bulletin is IBulletin, SigVerifier {
             size: size,
             validTillTimestamp: validTillTimestamp,
             nonce: nonce,
+            allowPartialFill: false,
             signature: signature
         });
 

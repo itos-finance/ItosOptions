@@ -176,7 +176,7 @@ contract IntegrationTest is Setup {
             weth.mint(seller2, depositAmt);
             vm.prank(seller2);
             weth.approve(address(pair), depositAmt);
-            usdc.mint(address(funder2), 300e6);
+            usdc.mint(address(funder2), 300e6); // total premium = 100e6/ETH * 3 ETH
 
             uint256 validTill = block.timestamp + 1 hours;
             bytes memory sig = _signQuote(
@@ -184,12 +184,13 @@ contract IntegrationTest is Setup {
                 address(pair),
                 mm2Key,
                 int256(3e18),
-                300e6,
+                100e6, // premiumPerUnit: 100 USDC per 1e18 units
                 validTill,
+                true,
                 0
             );
             vm.prank(seller2);
-            pair.sell(address(funder2), mm2, 3e18, 300e6, validTill, sig);
+            pair.sell(address(funder2), mm2, 3e18, 3e18, 100e6, validTill, true, sig);
         }
 
         assertEq(pair.netPosition(mm), int256(2e18));
@@ -258,11 +259,12 @@ contract IntegrationTest is Setup {
             -int256(uint256(size)),
             premium,
             validTill,
+            true,
             pair.nonces(mm)
         );
 
         vm.prank(buyer);
-        pair.buy(address(multiFunder), mm, size, premium, validTill, sig);
+        pair.buy(address(multiFunder), mm, size, size, premium, validTill, true, sig);
 
         assertEq(pair.netPosition(buyer), int256(uint256(size)));  // buyer is long
         assertEq(pair.netPosition(mm),    -int256(uint256(size))); // mm is short
@@ -299,11 +301,12 @@ contract IntegrationTest is Setup {
             int256(uint256(size)),
             premium,
             validTill,
+            true,
             0
         );
 
         vm.prank(seller);
-        pair.sell(address(multiFunder), mm, size, premium, validTill, sig);
+        pair.sell(address(multiFunder), mm, size, size, premium, validTill, true, sig);
 
         assertEq(pair.netPosition(mm), int256(uint256(size)));
         assertEq(multiFunder.balances(mm, address(usdc)), 0); // premium consumed
@@ -346,7 +349,8 @@ contract IntegrationTest is Setup {
     function test_bulletinBid_sellerFillsBid() public {
         OPair pair = _createCallPair();
         uint128 size = 2e18;
-        uint128 premium = 200e6; // total cashToken the buyer will pay
+        uint128 premiumPerUnit = 100e6; // 100 USDC per 1e18 units → 200 USDC total for 2e18
+        uint256 totalPremium = uint256(premiumPerUnit) * uint256(size) / 1e18;
         uint256 validTill = block.timestamp + 2 hours;
         int256 signedSize = int256(uint256(size)); // positive = buy intent
 
@@ -358,17 +362,18 @@ contract IntegrationTest is Setup {
             address(pair),
             mmPrivateKey,
             signedSize,
-            premium,
+            premiumPerUnit,
             validTill,
+            false,
             nonce
         );
-        usdc.mint(address(funder), premium); // ensure funder has funds
+        usdc.mint(address(funder), totalPremium); // ensure funder has funds
 
         bulletin.post(
             address(pair),
             mm,
             address(funder),
-            premium,
+            premiumPerUnit,
             int128(signedSize),
             validTill,
             nonce,
@@ -383,7 +388,7 @@ contract IntegrationTest is Setup {
         );
         assertEq(bid.signer, mm);
         assertEq(bid.funder, address(funder));
-        assertEq(bid.premium, premium);
+        assertEq(bid.premiumPerUnit, premiumPerUnit);
         assertEq(bid.size, int128(signedSize));
         assertEq(bid.nonce, nonce);
 
@@ -400,8 +405,10 @@ contract IntegrationTest is Setup {
             bid.funder,
             bid.signer,
             absSize,
-            premium,
+            absSize,
+            bid.premiumPerUnit,
             bid.validTillTimestamp,
+            bid.allowPartialFill,
             bid.signature // ← the stored Bulletin signature
         );
 
@@ -409,8 +416,8 @@ contract IntegrationTest is Setup {
         assertEq(pair.netPosition(seller), -int256(uint256(size))); // seller is short
         assertEq(pair.netPosition(mm), int256(uint256(size))); // mm is long
 
-        uint256 fee = (uint256(premium) * pair.FEE_BPS()) / pair.BPS();
-        assertEq(usdc.balanceOf(seller), premium - fee); // seller received premium minus fee
+        uint256 fee = (totalPremium * pair.FEE_BPS()) / pair.BPS();
+        assertEq(usdc.balanceOf(seller), totalPremium - fee); // seller received premium minus fee
         assertEq(usdc.balanceOf(address(funder)), 0); // funder's pool was drained by the trade
     }
 
@@ -443,6 +450,7 @@ contract IntegrationTest is Setup {
             signedSize,
             premium,
             validTill,
+            false,
             nonce
         );
         weth.mint(address(funder), size); // funder must hold the collateral (1 WETH for a call)
@@ -466,7 +474,7 @@ contract IntegrationTest is Setup {
         );
         assertEq(offer.signer, mm);
         assertEq(offer.funder, address(funder));
-        assertEq(offer.premium, premium);
+        assertEq(offer.premiumPerUnit, premium);
         assertEq(offer.nonce, nonce);
 
         // 2. Buyer reads the offer and fills it via OPair.buy().
@@ -483,8 +491,10 @@ contract IntegrationTest is Setup {
             offer.funder,
             offer.signer,
             absSize,
-            premium, // buyer pays this out-of-pocket
+            absSize,
+            offer.premiumPerUnit,
             offer.validTillTimestamp,
+            offer.allowPartialFill,
             offer.signature // ← the stored Bulletin signature
         );
 
@@ -531,6 +541,7 @@ contract IntegrationTest is Setup {
             signedSize,
             premium0,
             validTill,
+            false,
             0 // nonce 0 — valid right now
         );
         bytes memory sig1 = _signQuote(
@@ -540,6 +551,7 @@ contract IntegrationTest is Setup {
             signedSize,
             premium1,
             validTill,
+            false,
             1 // nonce 1 — valid only after bid0 fills
         );
 
@@ -582,8 +594,10 @@ contract IntegrationTest is Setup {
             bid0.funder,
             bid0.signer,
             uint128(bid0.size),
-            premium0,
+            uint128(bid0.size),
+            bid0.premiumPerUnit,
             bid0.validTillTimestamp,
+            bid0.allowPartialFill,
             bid0.signature
         );
 
@@ -602,8 +616,10 @@ contract IntegrationTest is Setup {
             bid1.funder,
             bid1.signer,
             uint128(bid1.size),
-            premium1,
+            uint128(bid1.size),
+            bid1.premiumPerUnit,
             bid1.validTillTimestamp,
+            bid1.allowPartialFill,
             bid1.signature
         );
 

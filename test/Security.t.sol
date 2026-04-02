@@ -98,11 +98,11 @@ contract SecurityTest is Setup {
 
         // mm signs for the fake funder — OPair sig check passes, but fake pays nothing
         uint256 nonce = pair.nonces(mm);
-        bytes memory sig = _signQuote(address(fake), address(pair), mmPrivateKey, int256(uint256(size)), premium, validTill, nonce);
+        bytes memory sig = _signQuote(address(fake), address(pair), mmPrivateKey, int256(uint256(size)), premium, validTill, true, nonce);
 
         vm.prank(seller);
         vm.expectRevert(IOPair.PremiumUnderpaid.selector);
-        pair.sell(address(fake), mm, size, premium, validTill, sig);
+        pair.sell(address(fake), mm, size, size, premium, validTill, true, sig);
     }
 
     // =========================================================================
@@ -122,11 +122,11 @@ contract SecurityTest is Setup {
 
         // mm signs for the fake funder — OPair sig check passes, but fake provides no collateral
         uint256 nonce = pair.nonces(mm);
-        bytes memory sig = _signQuote(address(fake), address(pair), mmPrivateKey, -int256(uint256(size)), premium, validTill, nonce);
+        bytes memory sig = _signQuote(address(fake), address(pair), mmPrivateKey, -int256(uint256(size)), premium, validTill, true, nonce);
 
         vm.prank(buyer);
         vm.expectRevert(IOPair.CollateralUnderpaid.selector);
-        pair.buy(address(fake), mm, size, premium, validTill, sig);
+        pair.buy(address(fake), mm, size, size, premium, validTill, true, sig);
     }
 
     // =========================================================================
@@ -147,11 +147,11 @@ contract SecurityTest is Setup {
 
         // mm signs for the drain funder
         uint256 nonce = pair.nonces(mm);
-        bytes memory sig = _signQuote(address(drain), address(pair), mmPrivateKey, -int256(uint256(size)), premium, validTill, nonce);
+        bytes memory sig = _signQuote(address(drain), address(pair), mmPrivateKey, -int256(uint256(size)), premium, validTill, true, nonce);
 
         vm.prank(buyer);
         vm.expectRevert(IOPair.CollateralUnderpaid.selector);
-        pair.buy(address(drain), mm, size, premium, validTill, sig);
+        pair.buy(address(drain), mm, size, size, premium, validTill, true, sig);
     }
 
     // =========================================================================
@@ -178,12 +178,12 @@ contract SecurityTest is Setup {
 
         // mm signs committing to address(funder)
         uint256 nonce = pair.nonces(mm);
-        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, -int256(uint256(size)), premium, validTill, nonce);
+        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, -int256(uint256(size)), premium, validTill, true, nonce);
 
         // Attacker substitutes fake funder — sig is for realFunder, not fake
         vm.prank(buyer);
         vm.expectRevert(SigVerifier.InvalidSignature.selector);
-        pair.buy(address(fake), mm, size, premium, validTill, sig);
+        pair.buy(address(fake), mm, size, size, premium, validTill, true, sig);
     }
 
     function test_tamperedFunder_sell_rejected() public {
@@ -200,12 +200,12 @@ contract SecurityTest is Setup {
 
         // mm signs committing to address(funder)
         uint256 nonce = pair.nonces(mm);
-        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, int256(uint256(size)), premium, validTill, nonce);
+        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, int256(uint256(size)), premium, validTill, true, nonce);
 
         // Seller substitutes fake funder — rejected
         vm.prank(seller);
         vm.expectRevert(SigVerifier.InvalidSignature.selector);
-        pair.sell(address(fake), mm, size, premium, validTill, sig);
+        pair.sell(address(fake), mm, size, size, premium, validTill, true, sig);
     }
 
     // =========================================================================
@@ -227,19 +227,19 @@ contract SecurityTest is Setup {
 
         // mm signs for 200e6
         uint256 nonce = pair.nonces(mm);
-        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, -int256(uint256(size)), signedPremium, validTill, nonce);
+        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, -int256(uint256(size)), signedPremium, validTill, true, nonce);
 
         // Buyer passes 1e6 instead of 200e6 — digest mismatch
         vm.prank(buyer);
         vm.expectRevert(SigVerifier.InvalidSignature.selector);
-        pair.buy(address(funder), mm, size, calledPremium, validTill, sig);
+        pair.buy(address(funder), mm, size, size, calledPremium, validTill, true, sig);
     }
 
     function test_tamperedSize_buy_rejected() public {
         OPair pair = _createCallPair();
 
         uint128 signedSize = 1e18;
-        uint128 calledSize = 5e18; // buyer tries to acquire more
+        uint128 calledSize = 5e18; // buyer tries to fill more than quoted
         uint128 premium = 100e6;
         uint256 validTill = block.timestamp + 1 hours;
 
@@ -248,14 +248,14 @@ contract SecurityTest is Setup {
         usdc.approve(address(pair), premium);
         weth.mint(address(funder), calledSize);
 
-        // mm signs for 1e18
+        // mm signs for signedSize=1e18 with premiumPerUnit=100e6
         uint256 nonce = pair.nonces(mm);
-        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, -int256(uint256(signedSize)), premium, validTill, nonce);
+        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, -int256(uint256(signedSize)), premium, validTill, true, nonce);
 
-        // Buyer passes 5e18 instead of 1e18 — digest mismatch
+        // Buyer passes fill=5e18 > size=1e18 — fill exceeds quoted size
         vm.prank(buyer);
-        vm.expectRevert(SigVerifier.InvalidSignature.selector);
-        pair.buy(address(funder), mm, calledSize, premium, validTill, sig);
+        vm.expectRevert(IOPair.FillExceedsQuotedSize.selector);
+        pair.buy(address(funder), mm, signedSize, calledSize, premium, validTill, true, sig);
     }
 
     // =========================================================================
@@ -280,11 +280,11 @@ contract SecurityTest is Setup {
 
         // Attacker signs for themselves but buyer claims victim is the signer
         uint256 nonce = pair.nonces(victim);
-        bytes memory sig = _signQuote(address(funder), address(pair), attackerKey, -int256(uint256(size)), premium, validTill, nonce);
+        bytes memory sig = _signQuote(address(funder), address(pair), attackerKey, -int256(uint256(size)), premium, validTill, true, nonce);
 
         vm.prank(buyer);
         vm.expectRevert(SigVerifier.InvalidSignature.selector);
-        pair.buy(address(funder), victim, size, premium, validTill, sig);
+        pair.buy(address(funder), victim, size, size, premium, validTill, true, sig);
     }
 
     // =========================================================================
@@ -303,7 +303,7 @@ contract SecurityTest is Setup {
         usdc.mint(address(funder), premium);
 
         // Build a legitimate signature
-        bytes32 digest = _buildDigest(address(funder), address(pair), int256(uint256(size)), premium, validTill, 0);
+        bytes32 digest = _buildDigest(address(funder), address(pair), int256(uint256(size)), premium, validTill, true, 0);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(mmPrivateKey, digest);
 
         // Flip to high-s
@@ -314,7 +314,7 @@ contract SecurityTest is Setup {
 
         vm.prank(seller);
         vm.expectRevert(abi.encodeWithSelector(ECDSA.ECDSAInvalidSignatureS.selector, sMalleable));
-        pair.sell(address(funder), mm, size, premium, validTill, malleableSig);
+        pair.sell(address(funder), mm, size, size, premium, validTill, true, malleableSig);
     }
 
     // =========================================================================
@@ -338,7 +338,7 @@ contract SecurityTest is Setup {
         uint256 validTill = block.timestamp + 1 hours;
 
         // Sign for pairA
-        bytes memory sigForA = _signQuote(address(funder), address(pairA), mmPrivateKey, int256(uint256(size)), premium, validTill, 0);
+        bytes memory sigForA = _signQuote(address(funder), address(pairA), mmPrivateKey, int256(uint256(size)), premium, validTill, true, 0);
 
         // Attempt to use on pairB
         weth.mint(seller, size);
@@ -348,7 +348,7 @@ contract SecurityTest is Setup {
 
         vm.prank(seller);
         vm.expectRevert(SigVerifier.InvalidSignature.selector);
-        pairB.sell(address(funder), mm, size, premium, validTill, sigForA);
+        pairB.sell(address(funder), mm, size, size, premium, validTill, true, sigForA);
     }
 
     // =========================================================================
@@ -366,7 +366,7 @@ contract SecurityTest is Setup {
         Funder funder2 = new Funder(address(factory));
 
         // Sign for funder (not funder2)
-        bytes memory sigForFunder1 = _signQuote(address(funder), address(pair), mmPrivateKey, int256(uint256(size)), premium, validTill, 0);
+        bytes memory sigForFunder1 = _signQuote(address(funder), address(pair), mmPrivateKey, int256(uint256(size)), premium, validTill, true, 0);
 
         // Attempt to use on funder2
         usdc.mint(address(funder2), premium);
@@ -376,7 +376,7 @@ contract SecurityTest is Setup {
 
         vm.prank(seller);
         vm.expectRevert(SigVerifier.InvalidSignature.selector);
-        pair.sell(address(funder2), mm, size, premium, validTill, sigForFunder1);
+        pair.sell(address(funder2), mm, size, size, premium, validTill, true, sigForFunder1);
     }
 
     // =========================================================================
@@ -394,7 +394,7 @@ contract SecurityTest is Setup {
         assertEq(pair.nonces(mm), 1);
 
         // Replay: build the same sig (nonce 0) and try to use it again
-        bytes memory replaySig = _signQuote(address(funder), address(pair), mmPrivateKey, int256(uint256(size)), premium, validTill, 0);
+        bytes memory replaySig = _signQuote(address(funder), address(pair), mmPrivateKey, int256(uint256(size)), premium, validTill, true, 0);
         weth.mint(seller, size);
         vm.prank(seller);
         weth.approve(address(pair), size);
@@ -402,7 +402,7 @@ contract SecurityTest is Setup {
 
         vm.prank(seller);
         vm.expectRevert(SigVerifier.InvalidSignature.selector);
-        pair.sell(address(funder), mm, size, premium, validTill, replaySig);
+        pair.sell(address(funder), mm, size, size, premium, validTill, true, replaySig);
     }
 
     // =========================================================================

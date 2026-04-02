@@ -20,6 +20,7 @@ interface IBulletin {
         int128  size;            // Signed notional size: positive = buy (bid), negative = sell (offer)
         uint256 validTillTimestamp;
         uint256 nonce;           // Funder nonce this signature was made for
+        bool    allowPartialFill; // Always false for Bulletin orders
         bytes   signature;
     }
 

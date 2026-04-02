@@ -28,6 +28,7 @@ interface IOPair {
     error DepositDeadlinePastExpiry();
     error ExpiryTooSoon();
     error FillExceedsQuotedSize();
+    error PartialFillNotAllowed();
 
     // -------------------------------------------------------------------------
     // Events
@@ -108,6 +109,7 @@ interface IOPair {
         uint128 fill,
         uint128 premiumPerUnit,
         uint256 validTillTimestamp,
+        bool allowPartialFill,
         bytes calldata signature
     ) external;
 
@@ -118,6 +120,7 @@ interface IOPair {
         uint128 fill,
         uint128 premiumPerUnit,
         uint256 validTillTimestamp,
+        bool allowPartialFill,
         bytes calldata signature
     ) external;
 

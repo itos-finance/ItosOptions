@@ -263,11 +263,13 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
         uint128 fill,
         uint128 premiumPerUnit,
         uint256 validTillTimestamp,
+        bool allowPartialFill,
         bytes calldata signature
     ) external beforeDepositDeadline nonReentrant {
         if (validTillTimestamp < block.timestamp) revert QuoteExpired();
         if (fill == 0) revert ZeroSize();
         if (fill > size) revert FillExceedsQuotedSize();
+        if (!allowPartialFill && fill < size) revert PartialFillNotAllowed();
         if (fill < minDepositSize) revert BelowMinDeposit();
 
         address seller = msg.sender;
@@ -279,6 +281,7 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
             int256(uint256(size)),
             premiumPerUnit,
             validTillTimestamp,
+            allowPartialFill,
             signature
         );
 
@@ -335,11 +338,13 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
         uint128 fill,
         uint128 premiumPerUnit,
         uint256 validTillTimestamp,
+        bool allowPartialFill,
         bytes calldata signature
     ) external beforeDepositDeadline nonReentrant {
         if (validTillTimestamp < block.timestamp) revert QuoteExpired();
         if (fill == 0) revert ZeroSize();
         if (fill > size) revert FillExceedsQuotedSize();
+        if (!allowPartialFill && fill < size) revert PartialFillNotAllowed();
         if (fill < minDepositSize) revert BelowMinDeposit();
 
         address buyer = msg.sender;
@@ -351,6 +356,7 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
             -int256(uint256(size)),
             premiumPerUnit,
             validTillTimestamp,
+            allowPartialFill,
             signature
         );
 
@@ -552,6 +558,7 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
         int256 size,
         uint256 premiumPerUnit,
         uint256 validTillTimestamp,
+        bool allowPartialFill,
         bytes calldata signature
     ) internal {
         uint256 currentNonce = nonces[signer];
@@ -563,6 +570,7 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
                 premiumPerUnit,
                 validTillTimestamp,
                 currentNonce,
+                allowPartialFill,
                 signature
             ) != signer
         ) revert InvalidSignature();
