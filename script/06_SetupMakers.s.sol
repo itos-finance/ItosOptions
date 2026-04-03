@@ -51,7 +51,7 @@ contract SetupMakers is Script {
             Funder funder = new Funder(factory);
 
             // Authorize the maker as a signer
-            funder.addSigner(maker);
+            funder.grantRole(funder.SIGNER_ROLE(), maker);
 
             // Approve funder to pull tokens from deployer
             IERC20(address(weth)).approve(address(funder), 100 ether);

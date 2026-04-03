@@ -27,6 +27,5 @@ contract DeployFunder is Script {
 
         console.log("Funder deployed at:", address(funder));
         console.log("Factory:           ", address(funder.factory()));
-        console.log("Owner:             ", funder.owner());
     }
 }
