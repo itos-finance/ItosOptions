@@ -266,7 +266,7 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
         uint256 validTillTimestamp,
         bool allowPartialFill,
         bytes calldata signature
-    ) external beforeDepositDeadline nonReentrant {
+    ) public beforeDepositDeadline nonReentrant {
         if (validTillTimestamp < block.timestamp) revert QuoteExpired();
         if (fill == 0) revert ZeroSize();
         if (fill > size) revert FillExceedsQuotedSize();
@@ -341,7 +341,7 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
         uint256 validTillTimestamp,
         bool allowPartialFill,
         bytes calldata signature
-    ) external beforeDepositDeadline nonReentrant {
+    ) public beforeDepositDeadline nonReentrant {
         if (validTillTimestamp < block.timestamp) revert QuoteExpired();
         if (fill == 0) revert ZeroSize();
         if (fill > size) revert FillExceedsQuotedSize();
@@ -400,6 +400,48 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
             buyerNetted,
             fill - physicalSize
         );
+    }
+
+    // -------------------------------------------------------------------------
+    // Take
+    // -------------------------------------------------------------------------
+    // Sign-dispatching wrapper: positive `size` calls buy, negative calls sell.
+    // The other party's funder and signer are the counterparty on the quote.
+    function take(
+        address funderAddr,
+        address signer,
+        int128 size,
+        uint128 fill,
+        uint128 premiumPerUnit,
+        uint256 validTillTimestamp,
+        bool allowPartialFill,
+        bytes calldata signature
+    ) external {
+        if (size > 0) {
+            buy(
+                funderAddr,
+                signer,
+                uint128(size),
+                fill,
+                premiumPerUnit,
+                validTillTimestamp,
+                allowPartialFill,
+                signature
+            );
+        } else if (size < 0) {
+            sell(
+                funderAddr,
+                signer,
+                uint128(-size),
+                fill,
+                premiumPerUnit,
+                validTillTimestamp,
+                allowPartialFill,
+                signature
+            );
+        } else {
+            revert ZeroSize();
+        }
     }
 
     // -------------------------------------------------------------------------
