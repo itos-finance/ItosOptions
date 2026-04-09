@@ -141,6 +141,17 @@ interface IOPair {
         bytes calldata signature
     ) external;
 
+    function take(
+        address funderAddr,
+        address signer,
+        int128 size,
+        uint128 fill,
+        uint128 premiumPerUnit,
+        uint256 validTillTimestamp,
+        bool allowPartialFill,
+        bytes calldata signature
+    ) external;
+
     function exercise(
         uint128 size,
         address callbackContract,
