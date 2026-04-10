@@ -4,6 +4,9 @@ pragma solidity ^0.8.34;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {
+    IERC20Metadata
+} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import {
     SafeERC20
 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {
@@ -28,15 +31,16 @@ abstract contract OToken is IERC20 {
 
     string public name;
     string public symbol;
-    uint8 public constant decimals = 18;
+    uint8 public immutable decimals;
 
     error OnlyPair();
     error NonTransferable();
 
-    constructor(string memory id, string memory sym) {
+    constructor(string memory id, string memory sym, uint8 _decimals) {
         pair = IOPair(msg.sender);
         name = id;
         symbol = sym;
+        decimals = _decimals;
     }
 
     /// @inheritdoc IERC20
@@ -69,8 +73,9 @@ abstract contract OToken is IERC20 {
 contract OLongToken is OToken {
     constructor(
         string memory id,
-        string memory sym
-    ) OToken(string.concat(id, "-long"), string.concat(sym, "LONG")) {}
+        string memory sym,
+        uint8 _decimals
+    ) OToken(string.concat(id, "-long"), string.concat(sym, "LONG"), _decimals) {}
 
     function balanceOf(address owner) public view override returns (uint256) {
         int256 pos = pair.netPosition(owner);
@@ -81,8 +86,9 @@ contract OLongToken is OToken {
 contract OShortToken is OToken {
     constructor(
         string memory id,
-        string memory sym
-    ) OToken(string.concat(id, "-short"), string.concat(sym, "SHORT")) {}
+        string memory sym,
+        uint8 _decimals
+    ) OToken(string.concat(id, "-short"), string.concat(sym, "SHORT"), _decimals) {}
 
     function balanceOf(address owner) public view override returns (uint256) {
         int256 pos = pair.netPosition(owner);
@@ -224,8 +230,9 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
         exerciseEarliest = block.timestamp + DEFAULT_EXERCISE_BUFFER;
         DOMAIN_SEPARATOR = _domainSeparatorFor(address(this));
 
-        address long = address(new OLongToken(identifier, symbol));
-        address short = address(new OShortToken(identifier, symbol));
+        uint8 riskDecimals = IERC20Metadata(_riskToken).decimals();
+        address long = address(new OLongToken(identifier, symbol, riskDecimals));
+        address short = address(new OShortToken(identifier, symbol, riskDecimals));
         emit NewOPair(
             factory,
             _riskToken,
