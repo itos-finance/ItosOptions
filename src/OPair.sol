@@ -75,7 +75,13 @@ contract OLongToken is OToken {
         string memory id,
         string memory sym,
         uint8 _decimals
-    ) OToken(string.concat(id, "-long"), string.concat(sym, "LONG"), _decimals) {}
+    )
+        OToken(
+            string.concat(id, "-long"),
+            string.concat(sym, "LONG"),
+            _decimals
+        )
+    {}
 
     function balanceOf(address owner) public view override returns (uint256) {
         int256 pos = pair.netPosition(owner);
@@ -88,7 +94,13 @@ contract OShortToken is OToken {
         string memory id,
         string memory sym,
         uint8 _decimals
-    ) OToken(string.concat(id, "-short"), string.concat(sym, "SHORT"), _decimals) {}
+    )
+        OToken(
+            string.concat(id, "-short"),
+            string.concat(sym, "SHORT"),
+            _decimals
+        )
+    {}
 
     function balanceOf(address owner) public view override returns (uint256) {
         int256 pos = pair.netPosition(owner);
@@ -151,13 +163,6 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
     uint256 public totalExercised; // exercised so far
     // totalFees is the only exception to being tracked via risk token. Since it can't be converted via strike.
     uint256 public totalFees; // accumulated cashToken fees.
-
-    // -------------------------------------------------------------------------
-    // EIP-712 (QUOTE_TYPEHASH inherited from SigVerifier)
-    // -------------------------------------------------------------------------
-    /// @notice EIP-712 domain separator cached at construction for gas efficiency.
-    ///         OPair is the verifyingContract. Used by signers and Bulletin to build digests.
-    bytes32 public immutable DOMAIN_SEPARATOR;
 
     /// @notice Per-signer nonce. Incremented on each successful sell/buy that
     ///         consumes a quote signed by that signer.
@@ -228,11 +233,13 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
         if (block.timestamp + 1 hours >= depositDeadline)
             revert ExpiryTooSoon();
         exerciseEarliest = block.timestamp + DEFAULT_EXERCISE_BUFFER;
-        DOMAIN_SEPARATOR = _domainSeparatorFor(address(this));
-
         uint8 riskDecimals = IERC20Metadata(_riskToken).decimals();
-        address long = address(new OLongToken(identifier, symbol, riskDecimals));
-        address short = address(new OShortToken(identifier, symbol, riskDecimals));
+        address long = address(
+            new OLongToken(identifier, symbol, riskDecimals)
+        );
+        address short = address(
+            new OShortToken(identifier, symbol, riskDecimals)
+        );
         emit NewOPair(
             factory,
             _riskToken,
