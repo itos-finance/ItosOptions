@@ -180,6 +180,10 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
     uint256 public constant DEFAULT_EXERCISE_BUFFER = 4 hours;
     // Admin may only extend expiry by up to this much beyond the originally deployed expiry.
     uint256 public constant MAX_EXPIRY_EXTENSION = 3 days;
+    // The minimum window where users can deposit.
+    uint256 public constant MIN_DEPOSIT_WINDOW = 9 hours;
+    // The minimum amount of time we give for exercising.
+    uint256 public constant MIN_EXERCISE_WINDOW = 2 hours;
 
     // -------------------------------------------------------------------------
     // Modifiers
@@ -230,9 +234,11 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
         maxExpiry = _expiry + MAX_EXPIRY_EXTENSION;
         depositDeadline = _expiry - DEFAULT_DEPOSIT_DEADLINE;
         // It'd be strange to create a contract that had a small deposit window.
-        if (block.timestamp + 1 hours >= depositDeadline)
+        if (block.timestamp + MIN_DEPOSIT_WINDOW >= depositDeadline)
             revert ExpiryTooSoon();
         exerciseEarliest = block.timestamp + DEFAULT_EXERCISE_BUFFER;
+        if (exerciseEarliest + MIN_EXERCISE_WINDOW >= expiry)
+            revert ExpiryTooSoon();
         uint8 riskDecimals = IERC20Metadata(_riskToken).decimals();
         address long = address(
             new OLongToken(identifier, symbol, riskDecimals)
