@@ -319,7 +319,7 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
         uint256 buyerNetted = _addLong(buyerSigner, fill);
 
         // Pull premium from buyer's Funder. Total = premiumPerUnit * fill / 1e18.
-        uint256 totalPremium = (uint256(premiumPerUnit) * uint256(fill)) / 1e18;
+        uint256 totalPremium = _mulDiv18(premiumPerUnit, fill, true);
         uint256 cashBefore = cashToken.balanceOf(address(this));
         IFunderBase(funderAddr).requestFunds(
             buyerSigner,
@@ -396,7 +396,7 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
         if (physicalSize > 0) totalSold += physicalSize;
 
         // Buyer pays premium. Total = premiumPerUnit * fill / 1e18.
-        uint256 totalPremium = (uint256(premiumPerUnit) * uint256(fill)) / 1e18;
+        uint256 totalPremium = _mulDiv18(premiumPerUnit, fill, true);
         cashToken.safeTransferFrom(buyer, address(this), totalPremium);
         uint256 fee = (totalPremium * FEE_BPS) / BPS;
         totalFees += fee;
@@ -711,16 +711,24 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
         uint256 riskSize,
         bool roundUp
     ) internal view returns (uint256 amt) {
-        uint256 s = strike;
-        uint256 d = 1e18;
-        assembly ("memory-safe") {
-            let m := mul(riskSize, s)
-            amt := add(div(m, d), and(roundUp, gt(mod(m, d), 0)))
-        }
+        amt = _mulDiv18(riskSize, strike, roundUp);
     }
 
     function _depositAmount(uint256 riskSize) internal view returns (uint256) {
         // Always round up on deposit.
         return isCall ? riskSize : _cashAmount(riskSize, true);
+    }
+
+    // @dev There is an implicit assumption that a * b will fit in 256 bits.
+    function _mulDiv18(
+        uint256 a,
+        uint256 b,
+        bool roundUp
+    ) internal pure returns (uint m) {
+        uint256 d = 1e18;
+        assembly ("memory-safe") {
+            let p := mul(a, b)
+            m := add(div(p, d), and(roundUp, gt(mod(m, d), 0)))
+        }
     }
 }
