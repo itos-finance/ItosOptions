@@ -22,6 +22,7 @@ interface IOPair {
     error CollateralUnderpaid();
     error CallbackUnderpaid();
     error NewExpiryNotLater();
+    error ExpiryExtensionTooFar();
     error DepositWindowClosed();
     error ExerciseTooEarly();
     error ExerciseWindowTooNarrow();
@@ -94,9 +95,11 @@ interface IOPair {
     function minDepositSize() external view returns (uint128);
     function depositToken() external view returns (IERC20);
     function swapToken() external view returns (IERC20);
+    function maxExpiry() external view returns (uint256);
     function DOMAIN_SEPARATOR() external view returns (bytes32);
     function FEE_BPS() external view returns (uint256);
     function BPS() external view returns (uint256);
+    function MAX_EXPIRY_EXTENSION() external view returns (uint256);
 
     // -------------------------------------------------------------------------
     // Mutable state

@@ -119,6 +119,7 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
     uint128 public immutable minDepositSize;
     IERC20 public immutable depositToken; // isCall ? riskToken : cashToken
     IERC20 public immutable swapToken; // isCall ? cashToken : riskToken
+    uint256 public immutable maxExpiry; // hard cap on admin expiry extensions
 
     // -------------------------------------------------------------------------
     // Mutable state
@@ -166,6 +167,8 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
     uint256 public constant DEFAULT_DEPOSIT_DEADLINE = 3 hours;
     // By default, exercises can only start 4 hours after creation as a precaution to give time for correcting any improperly configured vaults.
     uint256 public constant DEFAULT_EXERCISE_BUFFER = 4 hours;
+    // Admin may only extend expiry by up to this much beyond the originally deployed expiry.
+    uint256 public constant MAX_EXPIRY_EXTENSION = 3 days;
 
     // -------------------------------------------------------------------------
     // Modifiers
@@ -213,6 +216,7 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
         minDepositSize = _minDepositSize;
         depositToken = _isCall ? IERC20(_riskToken) : IERC20(_cashToken);
         swapToken = _isCall ? IERC20(_cashToken) : IERC20(_riskToken);
+        maxExpiry = _expiry + MAX_EXPIRY_EXTENSION;
         depositDeadline = _expiry - DEFAULT_DEPOSIT_DEADLINE;
         // It'd be strange to create a contract that had a small deposit window.
         if (block.timestamp + 1 hours >= depositDeadline)
@@ -564,6 +568,7 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
     // -------------------------------------------------------------------------
     function extendExpiry(uint256 newExpiry) external onlyFactoryOwner {
         if (newExpiry <= expiry) revert NewExpiryNotLater();
+        if (newExpiry > maxExpiry) revert ExpiryExtensionTooFar();
         expiry = newExpiry;
         emit ExpiryExtended(newExpiry);
     }
