@@ -129,6 +129,7 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
     // Immutables
     // -------------------------------------------------------------------------
     address public immutable factory;
+    // NOTE: Fee on transfer tokens are not supported.
     IERC20 public immutable riskToken;
     IERC20 public immutable cashToken;
     uint256 public immutable strike; // price of riskToken in cashToken, 18-decimal fixed point
