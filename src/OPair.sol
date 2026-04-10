@@ -519,7 +519,7 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
         address recipient,
         uint128 size,
         bool preferExercised
-    ) external afterExpiry {
+    ) external afterExpiry nonReentrant {
         if (size == 0) revert ZeroSize();
         if (netPosition[msg.sender] > -int256(uint256(size)))
             revert InsufficientShortPosition();
@@ -558,7 +558,7 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
     // Claim settled
     // -------------------------------------------------------------------------
     // Claimable any time – returns collateral pre-settled from mid-trade netting.
-    function claimSettled(address recipient) external {
+    function claimSettled(address recipient) external nonReentrant {
         uint256 depAmt = settledDepositToken[msg.sender];
         uint256 swapAmt = settledSwapToken[msg.sender];
         if (depAmt == 0 && swapAmt == 0) revert NothingToSettle();
