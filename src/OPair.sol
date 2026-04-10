@@ -580,7 +580,7 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
     // -------------------------------------------------------------------------
     // Extend expiry
     // -------------------------------------------------------------------------
-    function extendExpiry(uint256 newExpiry) external onlyFactoryOwner {
+    function extendExpiry(uint256 newExpiry) external onlyFactoryOwner beforeExpiry {
         if (newExpiry <= expiry) revert NewExpiryNotLater();
         if (newExpiry > maxExpiry) revert ExpiryExtensionTooFar();
         expiry = newExpiry;
