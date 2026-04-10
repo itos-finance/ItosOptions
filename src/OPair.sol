@@ -33,7 +33,6 @@ abstract contract OToken is IERC20 {
     string public symbol;
     uint8 public immutable decimals;
 
-    error OnlyPair();
     error NonTransferable();
 
     constructor(string memory id, string memory sym, uint8 _decimals) {
@@ -580,7 +579,9 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
     // -------------------------------------------------------------------------
     // Extend expiry
     // -------------------------------------------------------------------------
-    function extendExpiry(uint256 newExpiry) external onlyFactoryOwner beforeExpiry {
+    function extendExpiry(
+        uint256 newExpiry
+    ) external onlyFactoryOwner beforeExpiry {
         if (newExpiry <= expiry) revert NewExpiryNotLater();
         if (newExpiry > maxExpiry) revert ExpiryExtensionTooFar();
         expiry = newExpiry;
