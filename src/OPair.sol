@@ -385,21 +385,25 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
             signature
         );
 
-        // Buyer acquires a long position for `fill` units.
-        uint256 buyerNetted = _addLong(buyer, fill);
-
         // Seller acquires a short position for `fill` units.
         uint256 physicalSize = _addShort(sellerSigner, fill);
-        uint256 acquireAmt = _depositAmount(physicalSize); // 0 when fully netted
-        uint256 depositBefore = depositToken.balanceOf(address(this));
-        IFunderBase(sellerFunderAddr).requestFunds(
-            sellerSigner,
-            address(depositToken),
-            acquireAmt
-        );
-        if (depositToken.balanceOf(address(this)) - depositBefore != acquireAmt)
-            revert CollateralUnderpaid();
-        if (physicalSize > 0) totalSold += physicalSize;
+        if (physicalSize > 0) {
+            totalSold += physicalSize;
+            uint256 acquireAmt = _depositAmount(physicalSize); // 0 when fully netted
+            uint256 depositBefore = depositToken.balanceOf(address(this));
+            IFunderBase(sellerFunderAddr).requestFunds(
+                sellerSigner,
+                address(depositToken),
+                acquireAmt
+            );
+            if (
+                depositToken.balanceOf(address(this)) - depositBefore !=
+                acquireAmt
+            ) revert CollateralUnderpaid();
+        }
+
+        // Buyer acquires a long position for `fill` units.
+        uint256 buyerNetted = _addLong(buyer, fill);
 
         // Buyer pays premium. Total = premiumPerUnit * fill / 1e18.
         uint256 totalPremium = _mulDiv18(premiumPerUnit, fill, true);
