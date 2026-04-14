@@ -19,7 +19,8 @@ interface IBulletin {
         uint128 premiumPerUnit;  // Premium per 1e18 units of size (rate, not total)
         int128  size;            // Signed notional size: positive = buy (bid), negative = sell (offer)
         uint256 validTillTimestamp;
-        uint256 nonce;           // Funder nonce this signature was made for
+        uint256 channel;         // Nonce channel this signature was made for
+        uint256 nonce;           // Per-channel nonce this signature was made for
         bool    allowPartialFill; // Always false for Bulletin orders
         bytes   signature;
     }
@@ -46,7 +47,8 @@ interface IBulletin {
     /// @param premiumPerUnit     Premium per 1e18 units of size (rate, not total).
     /// @param size               Signed notional size: positive = bid, negative = offer.
     /// @param validTillTimestamp Quote expiry.
-    /// @param nonce              Funder nonce this signature was made for.
+    /// @param channel             Nonce channel this signature was made for.
+    /// @param nonce              Per-channel nonce this signature was made for.
     /// @param signature          EIP-712 signature over the quote.
     function post(
         address vault,
@@ -55,10 +57,11 @@ interface IBulletin {
         uint128 premiumPerUnit,
         int128 size,
         uint256 validTillTimestamp,
+        uint256 channel,
         uint256 nonce,
         bytes calldata signature
     ) external;
 
-    /// @notice Returns the order posted by `signer` for `vault` at `nonce`, or a zeroed struct if none.
-    function getOrder(address vault, address signer, uint256 nonce) external view returns (Order memory);
+    /// @notice Returns the order posted by `signer` for `vault` at `(channel, nonce)`, or a zeroed struct if none.
+    function getOrder(address vault, address signer, uint256 channel, uint256 nonce) external view returns (Order memory);
 }

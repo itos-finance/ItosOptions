@@ -18,8 +18,8 @@ import {IOPairFactory} from "./interfaces/IOPairFactory.sol";
 /// @dev Fund availability is verified off-chain before posting. No on-chain reservation.
 contract Bulletin is IBulletin, SigVerifier {
     IOPairFactory public immutable factory;
-    // vault → signer → nonce → Order
-    mapping(address => mapping(address => mapping(uint256 => Order))) private _orders;
+    // vault → signer → channel → nonce → Order
+    mapping(address => mapping(address => mapping(uint256 => mapping(uint256 => Order)))) private _orders;
 
     constructor(address _factory) {
         factory = IOPairFactory(_factory);
@@ -37,6 +37,7 @@ contract Bulletin is IBulletin, SigVerifier {
         uint128 premiumPerUnit,
         int128 size,
         uint256 validTillTimestamp,
+        uint256 channel,
         uint256 nonce,
         bytes calldata signature
     ) external {
@@ -50,24 +51,26 @@ contract Bulletin is IBulletin, SigVerifier {
                 int256(size),
                 premiumPerUnit,
                 validTillTimestamp,
+                channel,
                 nonce,
                 false, // Bulletin orders never allow partial fills
                 signature
             )
         ) revert InvalidSignature();
 
-        _orders[vault][signer][nonce] = Order({
+        _orders[vault][signer][channel][nonce] = Order({
             funder: funder,
             signer: signer,
             premiumPerUnit: premiumPerUnit,
             size: size,
             validTillTimestamp: validTillTimestamp,
+            channel: channel,
             nonce: nonce,
             allowPartialFill: false,
             signature: signature
         });
 
-        emit OrderPosted(vault, signer, _orders[vault][signer][nonce]);
+        emit OrderPosted(vault, signer, _orders[vault][signer][channel][nonce]);
     }
 
     // ------------------------------------------------------------------ //
@@ -78,8 +81,9 @@ contract Bulletin is IBulletin, SigVerifier {
     function getOrder(
         address vault,
         address signer,
+        uint256 channel,
         uint256 nonce
     ) external view returns (Order memory) {
-        return _orders[vault][signer][nonce];
+        return _orders[vault][signer][channel][nonce];
     }
 }

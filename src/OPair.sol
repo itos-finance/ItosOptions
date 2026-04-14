@@ -193,9 +193,9 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
     // totalFees is the only exception to being tracked via risk token. Since it can't be converted via strike.
     uint256 public totalFees; // accumulated cashToken fees.
 
-    /// @notice Per-signer nonce. Incremented on each successful sell/buy that
-    ///         consumes a quote signed by that signer.
-    mapping(address => uint256) public nonces;
+    /// @notice Per-signer, per-channel nonce. Each (signer, channel) pair has
+    ///         an independent nonce, allowing multiple concurrent valid quotes.
+    mapping(address => mapping(uint256 => uint256)) public nonces;
 
     // -------------------------------------------------------------------------
     // Constants
@@ -298,9 +298,9 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
     /// @notice Advance the caller's own nonce by `amount`, invalidating all prior
     ///         signatures for that nonce range. Self-service: only msg.sender's nonce
     ///         is affected.
-    function bumpNonce(uint256 amount) external {
-        uint256 newNonce = nonces[msg.sender] += amount;
-        emit NonceBumped(msg.sender, newNonce);
+    function bumpNonce(uint256 channel, uint256 amount) external {
+        uint256 newNonce = nonces[msg.sender][channel] += amount;
+        emit NonceBumped(msg.sender, channel, newNonce);
     }
 
     // -------------------------------------------------------------------------
@@ -322,6 +322,7 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
         uint128 premiumPerUnit,
         uint256 validTillTimestamp,
         bool allowPartialFill,
+        uint256 channel,
         bytes calldata signature
     ) public beforeDepositDeadline nonReentrant {
         if (validTillTimestamp < block.timestamp) revert QuoteExpired();
@@ -340,6 +341,7 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
             premiumPerUnit,
             validTillTimestamp,
             allowPartialFill,
+            channel,
             signature
         );
 
@@ -397,6 +399,7 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
         uint128 premiumPerUnit,
         uint256 validTillTimestamp,
         bool allowPartialFill,
+        uint256 channel,
         bytes calldata signature
     ) public beforeDepositDeadline nonReentrant {
         if (validTillTimestamp < block.timestamp) revert QuoteExpired();
@@ -415,6 +418,7 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
             premiumPerUnit,
             validTillTimestamp,
             allowPartialFill,
+            channel,
             signature
         );
 
@@ -476,6 +480,7 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
         uint128 premiumPerUnit,
         uint256 validTillTimestamp,
         bool allowPartialFill,
+        uint256 channel,
         bytes calldata signature
     ) external {
         if (size > 0) {
@@ -487,6 +492,7 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
                 premiumPerUnit,
                 validTillTimestamp,
                 allowPartialFill,
+                channel,
                 signature
             );
         } else if (size < 0) {
@@ -498,6 +504,7 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
                 premiumPerUnit,
                 validTillTimestamp,
                 allowPartialFill,
+                channel,
                 signature
             );
         } else {
@@ -729,9 +736,10 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
         uint256 premiumPerUnit,
         uint256 validTillTimestamp,
         bool allowPartialFill,
+        uint256 channel,
         bytes calldata signature
     ) internal {
-        uint256 currentNonce = nonces[signer];
+        uint256 currentNonce = nonces[signer][channel];
         if (
             _recoverSigner(
                 funder,
@@ -739,12 +747,13 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
                 size,
                 premiumPerUnit,
                 validTillTimestamp,
+                channel,
                 currentNonce,
                 allowPartialFill,
                 signature
             ) != signer
         ) revert InvalidSignature();
-        nonces[signer] = currentNonce + 1;
+        nonces[signer][channel] = currentNonce + 1;
     }
 
     // Add `size` units of long position to `user`.

@@ -84,7 +84,7 @@ interface IOPair {
     event ExpiryExtended(uint256 newExpiry);
     event DepositDeadlineUpdated(uint256 newDeadline);
     event ExerciseEarliestUpdated(uint256 newEarliest);
-    event NonceBumped(address indexed signer, uint256 newNonce);
+    event NonceBumped(address indexed signer, uint256 channel, uint256 newNonce);
     event FeesClaimed(address indexed recipient, uint256 amount);
 
     // -------------------------------------------------------------------------
@@ -118,12 +118,12 @@ interface IOPair {
     function totalSold() external view returns (uint256);
     function totalExercised() external view returns (uint256);
     function totalFees() external view returns (uint256);
-    function nonces(address signer) external view returns (uint256);
+    function nonces(address signer, uint256 channel) external view returns (uint256);
 
     // -------------------------------------------------------------------------
     // Actions
     // -------------------------------------------------------------------------
-    function bumpNonce(uint256 amount) external;
+    function bumpNonce(uint256 channel, uint256 amount) external;
 
     function sell(
         address funderAddr,
@@ -133,6 +133,7 @@ interface IOPair {
         uint128 premiumPerUnit,
         uint256 validTillTimestamp,
         bool allowPartialFill,
+        uint256 channel,
         bytes calldata signature
     ) external;
 
@@ -144,6 +145,7 @@ interface IOPair {
         uint128 premiumPerUnit,
         uint256 validTillTimestamp,
         bool allowPartialFill,
+        uint256 channel,
         bytes calldata signature
     ) external;
 
@@ -155,6 +157,7 @@ interface IOPair {
         uint128 premiumPerUnit,
         uint256 validTillTimestamp,
         bool allowPartialFill,
+        uint256 channel,
         bytes calldata signature
     ) external;
 

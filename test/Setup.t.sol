@@ -90,7 +90,7 @@ abstract contract Setup is Test {
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
 
     bytes32 private constant _QUOTE_TYPEHASH =
-        keccak256("Quote(address funder,address vault,int256 size,uint256 premiumPerUnit,uint256 validTillTimestamp,bool allowPartialFill,uint256 nonce)");
+        keccak256("Quote(address funder,address vault,int256 size,uint256 premiumPerUnit,uint256 validTillTimestamp,bool allowPartialFill,uint256 channel,uint256 nonce)");
 
     /// @dev Build an EIP-712 digest matching OPair._verifyAndConsumeQuote.
     ///      The verifyingContract is the vault (OPair), not the funder.
@@ -102,6 +102,7 @@ abstract contract Setup is Test {
         uint256 premiumPerUnit,
         uint256 validTill,
         bool allowPartialFill,
+        uint256 channel,
         uint256 nonce
     ) internal view returns (bytes32) {
         bytes32 domainSeparator = keccak256(abi.encode(
@@ -119,6 +120,7 @@ abstract contract Setup is Test {
             premiumPerUnit,
             validTill,
             allowPartialFill,
+            channel,
             nonce
         ));
         return keccak256(abi.encodePacked("\x19\x01", domainSeparator, structHash));
@@ -135,9 +137,10 @@ abstract contract Setup is Test {
         uint256 premiumPerUnit,
         uint256 validTill,
         bool allowPartialFill,
+        uint256 channel,
         uint256 nonce
     ) internal view returns (bytes memory) {
-        bytes32 digest = _buildDigest(funderAddr, vaultAddr, size, premiumPerUnit, validTill, allowPartialFill, nonce);
+        bytes32 digest = _buildDigest(funderAddr, vaultAddr, size, premiumPerUnit, validTill, allowPartialFill, channel, nonce);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(signerKey, digest);
         return abi.encodePacked(r, s, v);
     }
@@ -169,15 +172,15 @@ abstract contract Setup is Test {
 
         usdc.mint(address(funder), premium);
 
-        uint256 nonce = pair.nonces(mm);
+        uint256 nonce = pair.nonces(mm, 0);
         uint256 validTill = block.timestamp + 1 hours;
         // premiumPerUnit: premium per 1e18 units. For size=1e18 this equals premium.
         uint128 premiumPerUnit = uint128(uint256(premium) * 1e18 / uint256(size));
         // mm is buyer → positive size
-        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, int256(uint256(size)), premiumPerUnit, validTill, true, nonce);
+        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, int256(uint256(size)), premiumPerUnit, validTill, true, 0, nonce);
 
         vm.prank(_seller);
-        pair.sell(address(funder), mm, size, size, premiumPerUnit, validTill, true, sig);
+        pair.sell(address(funder), mm, size, size, premiumPerUnit, validTill, true, 0, sig);
     }
 
     /// @dev Full buy path: buyer pays premium; mm's funder provides collateral.
@@ -199,15 +202,15 @@ abstract contract Setup is Test {
         // Fund funder's pool with the collateral it will transfer
         MockERC20(address(pair.depositToken())).mint(address(funder), depositAmt);
 
-        uint256 nonce = pair.nonces(mm);
+        uint256 nonce = pair.nonces(mm, 0);
         uint256 validTill = block.timestamp + 1 hours;
         // premiumPerUnit: premium per 1e18 units. For size=1e18 this equals premium.
         uint128 premiumPerUnit = uint128(uint256(premium) * 1e18 / uint256(size));
         // mm is seller → negative size
-        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, -int256(uint256(size)), premiumPerUnit, validTill, true, nonce);
+        bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, -int256(uint256(size)), premiumPerUnit, validTill, true, 0, nonce);
 
         vm.prank(_buyer);
-        pair.buy(address(funder), mm, size, size, premiumPerUnit, validTill, true, sig);
+        pair.buy(address(funder), mm, size, size, premiumPerUnit, validTill, true, 0, sig);
     }
 
     /// @dev Fund callback with swap tokens so exercise can complete.
