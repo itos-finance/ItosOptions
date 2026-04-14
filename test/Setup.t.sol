@@ -218,4 +218,13 @@ abstract contract Setup is Test {
             weth.mint(address(callback), size);
         }
     }
+
+    /// @dev Fund callback with deposit tokens so unexercise can complete.
+    function _fundCallbackForUnexercise(OPair pair, uint128 size) internal {
+        if (pair.isCall()) {
+            weth.mint(address(callback), size);
+        } else {
+            usdc.mint(address(callback), (uint256(size) * STRIKE) / 1e18);
+        }
+    }
 }

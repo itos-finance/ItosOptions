@@ -17,6 +17,7 @@ interface IOPair {
     error BelowMinDeposit();
     error InsufficientLongPosition();
     error InsufficientShortPosition();
+    error InsufficientExercisedPosition();
     error NothingToSettle();
     error PremiumUnderpaid();
     error CollateralUnderpaid();
@@ -42,7 +43,8 @@ interface IOPair {
         uint256 expiry,
         bool isCall,
         address longToken,
-        address shortToken
+        address shortToken,
+        address exercisedToken
     );
     event Sold(
         address indexed seller,
@@ -61,6 +63,7 @@ interface IOPair {
         uint256 sellerNetted
     );
     event Exercised(address indexed buyer, uint128 size);
+    event Unexercised(address indexed buyer, uint128 size);
     event Claimed(
         address indexed seller,
         address indexed recipient,
@@ -111,6 +114,7 @@ interface IOPair {
         address account
     ) external view returns (uint256);
     function settledSwapToken(address account) external view returns (uint256);
+    function exercised(address account) external view returns (uint256);
     function totalSold() external view returns (uint256);
     function totalExercised() external view returns (uint256);
     function totalFees() external view returns (uint256);
@@ -160,7 +164,17 @@ interface IOPair {
         bytes calldata data
     ) external;
 
-    function claim(address recipient, uint128 size, bool preferExercised) external;
+    function unexercise(
+        uint128 size,
+        address callbackContract,
+        bytes calldata data
+    ) external;
+
+    function claim(
+        address recipient,
+        uint128 size,
+        bool preferExercised
+    ) external;
 
     function claimSettled(address recipient) external;
 

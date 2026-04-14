@@ -480,6 +480,7 @@ contract OPairTest is Setup {
         pair.exercise(1e18, address(callback), "");
 
         assertEq(pair.netPosition(mm), 0);
+        assertEq(pair.exercised(mm), 1e18);
         assertEq(pair.totalExercised(), 1e18);
     }
 
@@ -506,6 +507,7 @@ contract OPairTest is Setup {
         pair.exercise(1e18, address(callback), "");
 
         assertEq(pair.totalExercised(), 1e18);
+        assertEq(pair.exercised(mm), 1e18);
         assertEq(pair.netPosition(mm), int256(1e18));
     }
 
@@ -554,6 +556,209 @@ contract OPairTest is Setup {
         vm.expectEmit(true, false, false, true);
         emit IOPair.Exercised(mm, 1e18);
         pair.exercise(1e18, address(callback), "");
+    }
+
+    // =========================================================================
+    // unexercise
+    // =========================================================================
+
+    function test_unexercise_restoresLongPosition() public {
+        _doSell(pair, seller, 1e18, 100e6);
+        _fundCallbackForExercise(pair, 1e18);
+
+        vm.warp(pair.exerciseEarliest());
+        vm.prank(mm);
+        pair.exercise(1e18, address(callback), "");
+        assertEq(pair.netPosition(mm), 0);
+        assertEq(pair.exercised(mm), 1e18);
+
+        _fundCallbackForUnexercise(pair, 1e18);
+        vm.prank(mm);
+        pair.unexercise(1e18, address(callback), "");
+
+        assertEq(pair.netPosition(mm), int256(1e18));
+        assertEq(pair.exercised(mm), 0);
+        assertEq(pair.totalExercised(), 0);
+    }
+
+    function test_unexercise_partialUnexercise() public {
+        _doSell(pair, seller, 2e18, 200e6);
+        _fundCallbackForExercise(pair, 2e18);
+
+        vm.warp(pair.exerciseEarliest());
+        vm.prank(mm);
+        pair.exercise(2e18, address(callback), "");
+
+        _fundCallbackForUnexercise(pair, 1e18);
+        vm.prank(mm);
+        pair.unexercise(1e18, address(callback), "");
+
+        assertEq(pair.netPosition(mm), int256(1e18));
+        assertEq(pair.exercised(mm), 1e18);
+        assertEq(pair.totalExercised(), 1e18);
+    }
+
+    function test_unexercise_callPairSwapsTokensCorrectly() public {
+        _doSell(pair, seller, 1e18, 100e6);
+        _fundCallbackForExercise(pair, 1e18);
+
+        vm.warp(pair.exerciseEarliest());
+        vm.prank(mm);
+        pair.exercise(1e18, address(callback), "");
+
+        // After exercise: callback has 1 WETH (depositToken sent during exercise)
+        // and 0 USDC (swapToken was consumed by exercise callback).
+        // For unexercise: pair sends USDC (swapToken) to callback, expects WETH (depositToken) back.
+        _fundCallbackForUnexercise(pair, 1e18);
+        uint256 pairWethBefore = weth.balanceOf(address(pair));
+        vm.prank(mm);
+        pair.unexercise(1e18, address(callback), "");
+
+        // Pair got depositToken (WETH) back
+        assertEq(weth.balanceOf(address(pair)) - pairWethBefore, 1e18);
+    }
+
+    function test_unexercise_revertsInsufficientExercisedPosition() public {
+        _doSell(pair, seller, 1e18, 100e6);
+        _fundCallbackForExercise(pair, 1e18);
+
+        vm.warp(pair.exerciseEarliest());
+        vm.prank(mm);
+        pair.exercise(1e18, address(callback), "");
+
+        // Try to unexercise more than exercised
+        vm.prank(mm);
+        vm.expectRevert(IOPair.InsufficientExercisedPosition.selector);
+        pair.unexercise(2e18, address(callback), "");
+    }
+
+    function test_unexercise_revertsZeroSize() public {
+        vm.warp(pair.exerciseEarliest());
+        vm.prank(mm);
+        vm.expectRevert(IOPair.ZeroSize.selector);
+        pair.unexercise(0, address(callback), "");
+    }
+
+    function test_unexercise_revertsAfterExpiry() public {
+        _doSell(pair, seller, 1e18, 100e6);
+        _fundCallbackForExercise(pair, 1e18);
+
+        vm.warp(pair.exerciseEarliest());
+        vm.prank(mm);
+        pair.exercise(1e18, address(callback), "");
+
+        vm.warp(expiryTimestamp);
+        vm.prank(mm);
+        vm.expectRevert(IOPair.Expired.selector);
+        pair.unexercise(1e18, address(callback), "");
+    }
+
+    function test_unexercise_revertsBeforeExerciseEarliest() public {
+        _doSell(pair, seller, 1e18, 100e6);
+        _fundCallbackForExercise(pair, 1e18);
+
+        vm.warp(pair.exerciseEarliest());
+        vm.prank(mm);
+        pair.exercise(1e18, address(callback), "");
+
+        // Rewind before exerciseEarliest
+        vm.warp(pair.exerciseEarliest() - 1);
+        vm.prank(mm);
+        vm.expectRevert(IOPair.ExerciseTooEarly.selector);
+        pair.unexercise(1e18, address(callback), "");
+    }
+
+    function test_unexercise_revertsCallbackUnderpaid() public {
+        _doSell(pair, seller, 1e18, 100e6);
+        _fundCallbackForExercise(pair, 1e18);
+
+        vm.warp(pair.exerciseEarliest());
+        vm.prank(mm);
+        pair.exercise(1e18, address(callback), "");
+
+        _fundCallbackForUnexercise(pair, 1e18);
+        callback.setUnderpay(true);
+
+        vm.prank(mm);
+        vm.expectRevert(IOPair.CallbackUnderpaid.selector);
+        pair.unexercise(1e18, address(callback), "");
+    }
+
+    function test_unexercise_emitsUnexercised() public {
+        _doSell(pair, seller, 1e18, 100e6);
+        _fundCallbackForExercise(pair, 1e18);
+
+        vm.warp(pair.exerciseEarliest());
+        vm.prank(mm);
+        pair.exercise(1e18, address(callback), "");
+
+        _fundCallbackForUnexercise(pair, 1e18);
+        vm.prank(mm);
+        vm.expectEmit(true, false, false, true);
+        emit IOPair.Unexercised(mm, 1e18);
+        pair.unexercise(1e18, address(callback), "");
+    }
+
+    // =========================================================================
+    // addShort: exercised longs cannot be netted
+    // =========================================================================
+
+    function test_sell_exercisedLongsNotNetted() public {
+        // mm goes long 2e18, exercises 2e18
+        _doSell(pair, seller, 2e18, 200e6);
+        _fundCallbackForExercise(pair, 2e18);
+        vm.warp(pair.exerciseEarliest());
+        vm.prank(mm);
+        pair.exercise(2e18, address(callback), "");
+
+        assertEq(pair.netPosition(mm), 0);
+        assertEq(pair.exercised(mm), 2e18);
+
+        // Now mm goes short (via _doBuy where mm is seller).
+        // Because all of mm's longs are exercised (netPosition=0), no netting occurs.
+        // mm must provide full collateral.
+        _doBuy(pair, buyer, 1e18, 100e6);
+        assertEq(pair.netPosition(mm), -int256(1e18));
+        // totalSold increases by the full amount (no netting)
+        assertEq(pair.totalSold(), 3e18);
+    }
+
+    function test_sell_partialExercisedLongs_onlyNetsUnexercised() public {
+        // mm goes long 3e18, exercises 2e18
+        _doSell(pair, seller, 3e18, 300e6);
+        _fundCallbackForExercise(pair, 2e18);
+        vm.warp(pair.exerciseEarliest());
+        vm.prank(mm);
+        pair.exercise(2e18, address(callback), "");
+
+        assertEq(pair.netPosition(mm), int256(1e18));
+        assertEq(pair.exercised(mm), 2e18);
+
+        // mm goes short for 2e18 (via buyer calling buy, mm is seller via funder).
+        // mm has 1e18 unexercised longs, so only 1e18 is netted.
+        // physicalSize = 2e18 - 1e18 = 1e18 → only 1e18 collateral needed.
+        // Note: we call _doBuy after the warp, but must re-ensure timestamp is set.
+        uint256 totalSoldBefore = pair.totalSold();
+        {
+            uint128 buySize = 2e18;
+            uint128 buyPremium = 200e6;
+            uint256 depositAmt = buySize;
+            usdc.mint(buyer, buyPremium);
+            vm.prank(buyer);
+            usdc.approve(address(pair), buyPremium);
+            weth.mint(address(funder), depositAmt);
+
+            uint256 nonce = pair.nonces(mm);
+            // Use exerciseEarliest directly since block.timestamp may not reflect warp in helpers
+            uint256 validTill = pair.exerciseEarliest() + 1 hours;
+            uint128 premiumPerUnit = uint128(uint256(buyPremium) * 1e18 / uint256(buySize));
+            bytes memory sig = _signQuote(address(funder), address(pair), mmPrivateKey, -int256(uint256(buySize)), premiumPerUnit, validTill, true, nonce);
+            vm.prank(buyer);
+            pair.buy(address(funder), mm, buySize, buySize, premiumPerUnit, validTill, true, sig);
+        }
+        assertEq(pair.netPosition(mm), -int256(1e18));
+        // Only 1e18 physically added (1e18 netted)
+        assertEq(pair.totalSold() - totalSoldBefore, 1e18);
     }
 
     // =========================================================================

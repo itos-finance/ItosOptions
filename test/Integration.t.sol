@@ -363,6 +363,75 @@ contract IntegrationTest is Setup {
     }
 
     // =========================================================================
+    // Exercise → Unexercise round-trip
+    // =========================================================================
+
+    function test_exerciseUnexercise_roundTrip() public {
+        OPair pair = _createCallPair();
+        uint128 size = 2e18;
+        _doSell(pair, seller, size, 200e6);
+
+        // Exercise all
+        _fundCallbackForExercise(pair, size);
+        vm.warp(pair.exerciseEarliest());
+        vm.prank(mm);
+        pair.exercise(size, address(callback), "");
+        assertEq(pair.exercised(mm), size);
+        assertEq(pair.netPosition(mm), 0);
+        assertEq(pair.totalExercised(), size);
+
+        // Unexercise all
+        _fundCallbackForUnexercise(pair, size);
+        vm.prank(mm);
+        pair.unexercise(size, address(callback), "");
+        assertEq(pair.exercised(mm), 0);
+        assertEq(pair.netPosition(mm), int256(uint256(size)));
+        assertEq(pair.totalExercised(), 0);
+
+        // Seller can still claim full deposit back at expiry (fully unexercised)
+        vm.warp(expiryTimestamp);
+        uint256 wethBefore = weth.balanceOf(seller);
+        vm.prank(seller);
+        pair.claim(seller, size, false);
+        assertEq(weth.balanceOf(seller) - wethBefore, size);
+    }
+
+    // =========================================================================
+    // Exercise → go short → unexercise (netting path)
+    // =========================================================================
+
+    function test_exerciseThenShort_unexerciseNets() public {
+        OPair pair = _createCallPair();
+        uint128 size = 2e18;
+        _doSell(pair, seller, size, 200e6);
+
+        // mm exercises all 2e18
+        _fundCallbackForExercise(pair, size);
+        vm.warp(pair.exerciseEarliest());
+        vm.prank(mm);
+        pair.exercise(size, address(callback), "");
+        assertEq(pair.netPosition(mm), 0);
+        assertEq(pair.exercised(mm), size);
+
+        // mm goes short 1e18 via _doBuy (buyer buys, mm sells via funder)
+        _doBuy(pair, buyer, 1e18, 100e6);
+        assertEq(pair.netPosition(mm), -int256(1e18));
+        assertEq(pair.exercised(mm), size); // exercised unchanged
+
+        // mm unexercises 1e18 — this calls _addLong which nets against the 1e18 short
+        // Netting settles from exercised pool (preferExercised=true), giving swap tokens
+        vm.prank(mm);
+        pair.unexercise(1e18, address(callback), "");
+
+        // mm's short is netted away, net position back to 0
+        assertEq(pair.netPosition(mm), 0);
+        assertEq(pair.exercised(mm), 1e18);
+        assertEq(pair.totalExercised(), 1e18);
+        // mm got swap tokens settled (claimable via claimSettled)
+        assertGt(pair.settledSwapToken(mm), 0);
+    }
+
+    // =========================================================================
     // Bulletin → OPair: bid posted by buyer, filled by seller
     //
     // Flow:

@@ -43,7 +43,7 @@ abstract contract OToken is IERC20 {
     }
 
     /// @inheritdoc IERC20
-    function totalSupply() public view returns (uint256) {
+    function totalSupply() public view virtual returns (uint256) {
         return pair.totalSold();
     }
 
@@ -82,9 +82,35 @@ contract OLongToken is OToken {
         )
     {}
 
+    function totalSupply() public view override returns (uint256) {
+        return pair.totalSold() - pair.totalExercised();
+    }
+
     function balanceOf(address owner) public view override returns (uint256) {
         int256 pos = pair.netPosition(owner);
         return pos > 0 ? uint256(pos) : 0;
+    }
+}
+
+contract OExercisedToken is OToken {
+    constructor(
+        string memory id,
+        string memory sym,
+        uint8 _decimals
+    )
+        OToken(
+            string.concat(id, "-exercised"),
+            string.concat(sym, "EXERCISED"),
+            _decimals
+        )
+    {}
+
+    function totalSupply() public view override returns (uint256) {
+        return pair.totalExercised();
+    }
+
+    function balanceOf(address owner) public view override returns (uint256) {
+        return pair.exercised(owner);
     }
 }
 
@@ -157,6 +183,9 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
     // Pre-settled amounts from netting – claimable any time via claimSettled().
     mapping(address => uint256) public settledDepositToken;
     mapping(address => uint256) public settledSwapToken;
+
+    // Currently exercised amounts. When exercised, a net long position is decremented and moved here.
+    mapping(address => uint256) public exercised;
 
     // Pool totals (risk-token units unless noted)
     uint256 public totalSold; // total active short positions
@@ -246,6 +275,9 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
         address short = address(
             new OShortToken(identifier, symbol, riskDecimals)
         );
+        address exercisedToken = address(
+            new OExercisedToken(identifier, symbol, riskDecimals)
+        );
         emit NewOPair(
             factory,
             _riskToken,
@@ -254,7 +286,8 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
             _expiry,
             _isCall,
             long,
-            short
+            short,
+            exercisedToken
         );
     }
 
@@ -322,7 +355,7 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
         }
 
         // Buyer acquires a long position for `fill` units.
-        uint256 buyerNetted = _addLong(buyerSigner, fill);
+        uint256 buyerNetted = _addLong(buyerSigner, fill, false);
 
         // Pull premium from buyer's Funder. Total = premiumPerUnit * fill / 1e18.
         uint256 totalPremium = _mulDiv18(premiumPerUnit, fill, true);
@@ -403,7 +436,7 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
         }
 
         // Buyer acquires a long position for `fill` units.
-        uint256 buyerNetted = _addLong(buyer, fill);
+        uint256 buyerNetted = _addLong(buyer, fill, false);
 
         // Buyer pays premium. Total = premiumPerUnit * fill / 1e18.
         uint256 totalPremium = _mulDiv18(premiumPerUnit, fill, true);
@@ -489,6 +522,7 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
             revert InsufficientLongPosition();
 
         netPosition[msg.sender] -= int256(uint256(size));
+        exercised[msg.sender] += size;
         totalExercised += size;
 
         uint256 depositAmt = size;
@@ -513,6 +547,62 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
             revert CallbackUnderpaid();
 
         emit Exercised(msg.sender, size);
+    }
+
+    // -------------------------------------------------------------------------
+    // Unexercise
+    // -------------------------------------------------------------------------
+    // Buyers who have exercised can undo the exercise at the strike before expiry via a callback contract.
+    // For calls: vault sends cashToken, callback returns riskToken at strike price.
+    // For puts:  vault sends riskToken, callback returns cashToken at strike price.
+    /// @dev This may appear strange but this additional feature incentivies market makers align with expected european
+    /// options payoffs while also allowing them to trade the gamma without any additional funding.
+    function unexercise(
+        uint128 size,
+        address callbackContract,
+        bytes calldata data
+    ) external beforeExpiry nonReentrant {
+        if (block.timestamp < exerciseEarliest) revert ExerciseTooEarly();
+        if (size == 0) revert ZeroSize();
+        if (exercised[msg.sender] < size)
+            revert InsufficientExercisedPosition();
+
+        exercised[msg.sender] -= size;
+
+        // We decrease their exercise and increase their long. This could cause some netting.
+        // 1. Any amount that is not netted just decreases our total exercised size.
+        // 2. Any amount that is netted, also decreases the total exercised, but settlNetted already
+        // decreases from total exercised and especially because we call it with preferExercised=true.
+        // Thus we just have to decrease the totalExercised by the non-netted portion.
+        uint256 netted = _addLong(msg.sender, size, true);
+        totalExercised -= size - netted;
+
+        // Only do the physical swap for the non-netted portion.
+        uint128 physical = size - uint128(netted);
+        if (physical > 0) {
+            uint256 depositAmt = physical;
+            uint256 swapAmt = physical;
+            if (isCall) {
+                swapAmt = _cashAmount(physical, true);
+            } else {
+                depositAmt = _cashAmount(physical, false);
+            }
+
+            swapToken.safeTransfer(callbackContract, swapAmt);
+
+            uint256 balBefore = depositToken.balanceOf(address(this));
+            IExerciseCallback(callbackContract).onExercise(
+                address(swapToken),
+                address(depositToken),
+                swapAmt,
+                depositAmt,
+                data
+            );
+            if (depositToken.balanceOf(address(this)) - balBefore != depositAmt)
+                revert CallbackUnderpaid();
+        }
+
+        emit Unexercised(msg.sender, size);
     }
 
     // -------------------------------------------------------------------------
@@ -665,13 +755,14 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
     // Returns the number of units that were netted from an existing short.
     function _addLong(
         address user,
-        uint128 size
+        uint128 size,
+        bool preferExercised
     ) internal returns (uint256 netted) {
         int256 pos = netPosition[user];
         if (pos < 0) {
             uint256 shortSize = uint256(-pos);
             netted = shortSize >= size ? size : shortSize;
-            _settleNetted(user, netted);
+            _settleNetted(user, netted, preferExercised);
         }
         netPosition[user] = pos + int256(uint256(size));
     }
@@ -689,6 +780,7 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
         int256 pos = netPosition[user];
         uint256 netted;
         if (pos > 0) {
+            // netPosition already excludes exercised amounts, so all of it is unexercised.
             uint256 longSize = uint256(pos);
             netted = longSize >= size ? size : longSize;
         }
@@ -700,12 +792,24 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
     /// Settle `toNet` units of `account`'s existing short position.
     /// @dev Always takes from the unexercised pool first, then the exercised pool.
     /// @dev only before expiry code can reach this which is why the preference is unexercised.
-    function _settleNetted(address account, uint256 toNet) internal {
+    function _settleNetted(
+        address account,
+        uint256 toNet,
+        bool preferExercised
+    ) internal {
         uint256 totalUnexercised = totalSold - totalExercised;
-        uint256 fromUnexercised = toNet > totalUnexercised
-            ? totalUnexercised
-            : toNet;
-        uint256 fromExercised = toNet - fromUnexercised;
+        uint256 fromExercised;
+        uint256 fromUnexercised;
+
+        if (preferExercised) {
+            fromExercised = toNet > totalExercised ? totalExercised : toNet;
+            fromUnexercised = toNet - fromExercised;
+        } else {
+            fromUnexercised = toNet > totalUnexercised
+                ? totalUnexercised
+                : toNet;
+            fromExercised = toNet - fromUnexercised;
+        }
 
         // Longs clear previously sold contracts.
         totalExercised -= fromExercised;

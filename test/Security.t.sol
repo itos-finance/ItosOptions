@@ -452,6 +452,7 @@ contract SecurityTest is Setup {
         pair.exercise(2e18, address(callback), "");
 
         assertEq(pair.totalExercised(), 2e18);
+        assertEq(pair.exercised(mm), 2e18);
         assertEq(pair.netPosition(mm), 0);
     }
 
@@ -471,6 +472,7 @@ contract SecurityTest is Setup {
 
         // Rights fully consumed; re-entry silently failed
         assertEq(pair.netPosition(mm), 0);
+        assertEq(pair.exercised(mm), 1e18);
         assertEq(pair.totalExercised(), 1e18);
         assertFalse(reentrantCb.attacked());
     }
