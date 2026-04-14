@@ -33,7 +33,7 @@ contract BulletinTest is Setup {
         uint256 validTill,
         uint256 nonce
     ) internal view returns (bytes memory) {
-        bytes32 digest = _buildDigest(funderAddr, vaultAddr, int256(size), uint256(premium), validTill, false, nonce);
+        bytes32 digest = _buildDigest(funderAddr, vaultAddr, int256(size), uint256(premium), validTill, false, 0, nonce);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(signerKey, digest);
         return abi.encodePacked(r, s, v);
     }
@@ -46,9 +46,9 @@ contract BulletinTest is Setup {
         uint256 validTill = block.timestamp + 1 hours;
         bytes memory sig = _signBulletinQuote(address(funder), address(pair), mmPrivateKey, BID_SIZE, PREMIUM_PER_UNIT, validTill, 0);
 
-        bulletin.post(address(pair), mm, address(funder), PREMIUM_PER_UNIT, BID_SIZE, validTill, 0, sig);
+        bulletin.post(address(pair), mm, address(funder), PREMIUM_PER_UNIT, BID_SIZE, validTill, 0, 0, sig);
 
-        IBulletin.Order memory order = bulletin.getOrder(address(pair), mm, 0);
+        IBulletin.Order memory order = bulletin.getOrder(address(pair), mm, 0, 0);
         assertEq(order.funder,             address(funder));
         assertEq(order.signer,             mm);
         assertEq(order.premiumPerUnit,            PREMIUM_PER_UNIT);
@@ -64,22 +64,22 @@ contract BulletinTest is Setup {
         bytes memory sig = _signBulletinQuote(address(funder), address(pair), mmPrivateKey, BID_SIZE, PREMIUM_PER_UNIT, validTill, 0);
 
         vm.prank(seller); // third party posts on behalf of mm
-        bulletin.post(address(pair), mm, address(funder), PREMIUM_PER_UNIT, BID_SIZE, validTill, 0, sig);
+        bulletin.post(address(pair), mm, address(funder), PREMIUM_PER_UNIT, BID_SIZE, validTill, 0, 0, sig);
 
-        assertEq(bulletin.getOrder(address(pair), mm, 0).signer, mm);
+        assertEq(bulletin.getOrder(address(pair), mm, 0, 0).signer, mm);
     }
 
     function test_post_replacesOrderAtSameNonce() public {
         uint256 validTill = block.timestamp + 1 hours;
         bytes memory sig1 = _signBulletinQuote(address(funder), address(pair), mmPrivateKey, BID_SIZE, PREMIUM_PER_UNIT, validTill, 0);
-        bulletin.post(address(pair), mm, address(funder), PREMIUM_PER_UNIT, BID_SIZE, validTill, 0, sig1);
+        bulletin.post(address(pair), mm, address(funder), PREMIUM_PER_UNIT, BID_SIZE, validTill, 0, 0, sig1);
 
         // Post a new bid at the same nonce — overwrites
         int128 newSize = BID_SIZE * 2;
         bytes memory sig2 = _signBulletinQuote(address(funder), address(pair), mmPrivateKey, newSize, PREMIUM_PER_UNIT, validTill, 0);
-        bulletin.post(address(pair), mm, address(funder), PREMIUM_PER_UNIT, newSize, validTill, 0, sig2);
+        bulletin.post(address(pair), mm, address(funder), PREMIUM_PER_UNIT, newSize, validTill, 0, 0, sig2);
 
-        assertEq(bulletin.getOrder(address(pair), mm, 0).size, newSize);
+        assertEq(bulletin.getOrder(address(pair), mm, 0, 0).size, newSize);
     }
 
     function test_post_futureNonce() public {
@@ -87,9 +87,9 @@ contract BulletinTest is Setup {
         uint256 validTill = block.timestamp + 1 hours;
         bytes memory sig = _signBulletinQuote(address(funder), address(pair), mmPrivateKey, BID_SIZE, PREMIUM_PER_UNIT, validTill, 5);
 
-        bulletin.post(address(pair), mm, address(funder), PREMIUM_PER_UNIT, BID_SIZE, validTill, 5, sig);
+        bulletin.post(address(pair), mm, address(funder), PREMIUM_PER_UNIT, BID_SIZE, validTill, 0, 5, sig);
 
-        assertEq(bulletin.getOrder(address(pair), mm, 5).nonce, 5);
+        assertEq(bulletin.getOrder(address(pair), mm, 0, 5).nonce, 5);
     }
 
     // =========================================================================
@@ -100,9 +100,9 @@ contract BulletinTest is Setup {
         uint256 validTill = block.timestamp + 1 hours;
         bytes memory sig = _signBulletinQuote(address(funder), address(pair), mmPrivateKey, OFFER_SIZE, PREMIUM_PER_UNIT, validTill, 0);
 
-        bulletin.post(address(pair), mm, address(funder), PREMIUM_PER_UNIT, OFFER_SIZE, validTill, 0, sig);
+        bulletin.post(address(pair), mm, address(funder), PREMIUM_PER_UNIT, OFFER_SIZE, validTill, 0, 0, sig);
 
-        IBulletin.Order memory order = bulletin.getOrder(address(pair), mm, 0);
+        IBulletin.Order memory order = bulletin.getOrder(address(pair), mm, 0, 0);
         assertEq(order.funder,   address(funder));
         assertEq(order.signer,   mm);
         assertEq(order.premiumPerUnit,  PREMIUM_PER_UNIT);
@@ -115,9 +115,9 @@ contract BulletinTest is Setup {
         bytes memory sig = _signBulletinQuote(address(funder), address(pair), mmPrivateKey, OFFER_SIZE, PREMIUM_PER_UNIT, validTill, 0);
 
         vm.prank(buyer); // third party posts mm's offer
-        bulletin.post(address(pair), mm, address(funder), PREMIUM_PER_UNIT, OFFER_SIZE, validTill, 0, sig);
+        bulletin.post(address(pair), mm, address(funder), PREMIUM_PER_UNIT, OFFER_SIZE, validTill, 0, 0, sig);
 
-        assertEq(bulletin.getOrder(address(pair), mm, 0).signer, mm);
+        assertEq(bulletin.getOrder(address(pair), mm, 0, 0).signer, mm);
     }
 
     // =========================================================================
@@ -129,14 +129,14 @@ contract BulletinTest is Setup {
 
         // Bid at nonce 0
         bytes memory bidSig = _signBulletinQuote(address(funder), address(pair), mmPrivateKey, BID_SIZE, PREMIUM_PER_UNIT, validTill, 0);
-        bulletin.post(address(pair), mm, address(funder), PREMIUM_PER_UNIT, BID_SIZE, validTill, 0, bidSig);
+        bulletin.post(address(pair), mm, address(funder), PREMIUM_PER_UNIT, BID_SIZE, validTill, 0, 0, bidSig);
 
         // Offer at nonce 1 — stored independently
         bytes memory offerSig = _signBulletinQuote(address(funder), address(pair), mmPrivateKey, OFFER_SIZE, PREMIUM_PER_UNIT, validTill, 1);
-        bulletin.post(address(pair), mm, address(funder), PREMIUM_PER_UNIT, OFFER_SIZE, validTill, 1, offerSig);
+        bulletin.post(address(pair), mm, address(funder), PREMIUM_PER_UNIT, OFFER_SIZE, validTill, 0, 1, offerSig);
 
-        assertEq(bulletin.getOrder(address(pair), mm, 0).size, BID_SIZE);
-        assertEq(bulletin.getOrder(address(pair), mm, 1).size, OFFER_SIZE);
+        assertEq(bulletin.getOrder(address(pair), mm, 0, 0).size, BID_SIZE);
+        assertEq(bulletin.getOrder(address(pair), mm, 0, 1).size, OFFER_SIZE);
     }
 
     // =========================================================================
@@ -148,7 +148,7 @@ contract BulletinTest is Setup {
         bytes memory sig = _signBulletinQuote(address(funder), address(pair), mmPrivateKey, 0, PREMIUM_PER_UNIT, validTill, 0);
 
         vm.expectRevert(IBulletin.ZeroSize.selector);
-        bulletin.post(address(pair), mm, address(funder), PREMIUM_PER_UNIT, 0, validTill, 0, sig);
+        bulletin.post(address(pair), mm, address(funder), PREMIUM_PER_UNIT, 0, validTill, 0, 0, sig);
     }
 
     function test_post_revertsVaultNotFromFactory() public {
@@ -156,7 +156,7 @@ contract BulletinTest is Setup {
         bytes memory sig = _signBulletinQuote(address(funder), address(0xdead), mmPrivateKey, BID_SIZE, PREMIUM_PER_UNIT, validTill, 0);
 
         vm.expectRevert(IBulletin.VaultNotFromFactory.selector);
-        bulletin.post(address(0xdead), mm, address(funder), PREMIUM_PER_UNIT, BID_SIZE, validTill, 0, sig);
+        bulletin.post(address(0xdead), mm, address(funder), PREMIUM_PER_UNIT, BID_SIZE, validTill, 0, 0, sig);
     }
 
     function test_post_revertsInvalidSignature() public {
@@ -164,7 +164,7 @@ contract BulletinTest is Setup {
         bytes memory badSig = _signBulletinQuote(address(funder), address(pair), 0xDEAD, BID_SIZE, PREMIUM_PER_UNIT, validTill, 0);
 
         vm.expectRevert(SigVerifier.InvalidSignature.selector);
-        bulletin.post(address(pair), mm, address(funder), PREMIUM_PER_UNIT, BID_SIZE, validTill, 0, badSig);
+        bulletin.post(address(pair), mm, address(funder), PREMIUM_PER_UNIT, BID_SIZE, validTill, 0, 0, badSig);
     }
 
     function test_post_revertsWrongFunderInSig() public {
@@ -172,7 +172,7 @@ contract BulletinTest is Setup {
         bytes memory sig = _signBulletinQuote(address(funder), address(pair), mmPrivateKey, BID_SIZE, PREMIUM_PER_UNIT, validTill, 0);
 
         vm.expectRevert(SigVerifier.InvalidSignature.selector);
-        bulletin.post(address(pair), mm, address(0xdead), PREMIUM_PER_UNIT, BID_SIZE, validTill, 0, sig);
+        bulletin.post(address(pair), mm, address(0xdead), PREMIUM_PER_UNIT, BID_SIZE, validTill, 0, 0, sig);
     }
 
     // =========================================================================
@@ -184,8 +184,8 @@ contract BulletinTest is Setup {
         bytes memory sig = _signBulletinQuote(address(funder), address(pair), mmPrivateKey, BID_SIZE, PREMIUM_PER_UNIT, validTill, 0);
 
         vm.expectEmit(true, true, false, false);
-        emit IBulletin.OrderPosted(address(pair), mm, IBulletin.Order(address(funder), mm, PREMIUM_PER_UNIT, BID_SIZE, validTill, 0, false, sig));
-        bulletin.post(address(pair), mm, address(funder), PREMIUM_PER_UNIT, BID_SIZE, validTill, 0, sig);
+        emit IBulletin.OrderPosted(address(pair), mm, IBulletin.Order(address(funder), mm, PREMIUM_PER_UNIT, BID_SIZE, validTill, 0, 0, false, sig));
+        bulletin.post(address(pair), mm, address(funder), PREMIUM_PER_UNIT, BID_SIZE, validTill, 0, 0, sig);
     }
 
     function test_post_emitsOrderPosted_offer() public {
@@ -193,8 +193,8 @@ contract BulletinTest is Setup {
         bytes memory sig = _signBulletinQuote(address(funder), address(pair), mmPrivateKey, OFFER_SIZE, PREMIUM_PER_UNIT, validTill, 0);
 
         vm.expectEmit(true, true, false, false);
-        emit IBulletin.OrderPosted(address(pair), mm, IBulletin.Order(address(funder), mm, PREMIUM_PER_UNIT, OFFER_SIZE, validTill, 0, false, sig));
-        bulletin.post(address(pair), mm, address(funder), PREMIUM_PER_UNIT, OFFER_SIZE, validTill, 0, sig);
+        emit IBulletin.OrderPosted(address(pair), mm, IBulletin.Order(address(funder), mm, PREMIUM_PER_UNIT, OFFER_SIZE, validTill, 0, 0, false, sig));
+        bulletin.post(address(pair), mm, address(funder), PREMIUM_PER_UNIT, OFFER_SIZE, validTill, 0, 0, sig);
     }
 
     // =========================================================================
@@ -202,7 +202,7 @@ contract BulletinTest is Setup {
     // =========================================================================
 
     function test_getOrder_returnsZeroStructWhenEmpty() public view {
-        IBulletin.Order memory order = bulletin.getOrder(address(pair), mm, 0);
+        IBulletin.Order memory order = bulletin.getOrder(address(pair), mm, 0, 0);
         assertEq(order.size,   0);
         assertEq(order.funder, address(0));
     }

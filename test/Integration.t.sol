@@ -269,7 +269,7 @@ contract IntegrationTest is Setup {
             premium,
             validTill,
             true,
-            pair.nonces(mm)
+            pair.nonces(mm, 0)
         );
 
         vm.prank(buyer);
@@ -451,8 +451,8 @@ contract IntegrationTest is Setup {
         int256 signedSize = int256(uint256(size)); // positive = buy intent
 
         // 1. MM signs the quote and posts it to the Bulletin.
-        //    nonce=0 since pair.nonces(mm)==0 at this point.
-        uint256 nonce = pair.nonces(mm);
+        //    nonce=0 since pair.nonces(mm, 0)==0 at this point.
+        uint256 nonce = pair.nonces(mm, 0);
         bytes memory sig = _signQuote(
             address(funder),
             address(pair),
@@ -538,7 +538,7 @@ contract IntegrationTest is Setup {
         int256 signedSize = -int256(uint256(size)); // negative = sell intent
 
         // 1. MM signs the offer quote and posts it to the Bulletin.
-        uint256 nonce = pair.nonces(mm);
+        uint256 nonce = pair.nonces(mm, 0);
         bytes memory sig = _signQuote(
             address(funder),
             address(pair),
@@ -628,7 +628,7 @@ contract IntegrationTest is Setup {
         int256 signedSize = int256(uint256(size)); // positive = buy intent
 
         // ── Pre-sign both orders (before any trade executes) ─────────────────
-        assertEq(pair.nonces(mm), 0);
+        assertEq(pair.nonces(mm, 0), 0);
 
         bytes memory sig0 = _signQuote(
             address(funder),
@@ -697,7 +697,7 @@ contract IntegrationTest is Setup {
             bid0.signature
         );
 
-        assertEq(pair.nonces(mm), 1); // nonce advanced
+        assertEq(pair.nonces(mm, 0), 1); // nonce advanced
         assertEq(pair.netPosition(mm), int256(uint256(size))); // mm is long 1 ETH
 
         // ── sellerB fills bid1 (already on the Bulletin at nonce 1) ──────────
@@ -719,7 +719,7 @@ contract IntegrationTest is Setup {
             bid1.signature
         );
 
-        assertEq(pair.nonces(mm), 2); // nonce advanced again
+        assertEq(pair.nonces(mm, 0), 2); // nonce advanced again
         assertEq(pair.netPosition(mm), int256(2 * uint256(size))); // mm is now long 2 ETH
 
         // Both sellers are short
