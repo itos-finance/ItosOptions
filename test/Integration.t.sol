@@ -187,6 +187,7 @@ contract IntegrationTest is Setup {
                 100e6, // premiumPerUnit: 100 USDC per 1e18 units
                 validTill,
                 true,
+                0,
                 0
             );
             vm.prank(seller2);
@@ -198,6 +199,7 @@ contract IntegrationTest is Setup {
                 100e6,
                 validTill,
                 true,
+                0,
                 sig
             );
         }
@@ -269,6 +271,7 @@ contract IntegrationTest is Setup {
             premium,
             validTill,
             true,
+            0,
             pair.nonces(mm, 0)
         );
 
@@ -281,6 +284,7 @@ contract IntegrationTest is Setup {
             premium,
             validTill,
             true,
+            0,
             sig
         );
 
@@ -320,6 +324,7 @@ contract IntegrationTest is Setup {
             premium,
             validTill,
             true,
+            0,
             0
         );
 
@@ -332,6 +337,7 @@ contract IntegrationTest is Setup {
             premium,
             validTill,
             true,
+            0,
             sig
         );
 
@@ -461,6 +467,7 @@ contract IntegrationTest is Setup {
             premiumPerUnit,
             validTill,
             false,
+            0,
             nonce
         );
         usdc.mint(address(funder), totalPremium); // ensure funder has funds
@@ -472,6 +479,7 @@ contract IntegrationTest is Setup {
             premiumPerUnit,
             int128(signedSize),
             validTill,
+            0,
             nonce,
             sig
         );
@@ -480,6 +488,7 @@ contract IntegrationTest is Setup {
         IBulletin.Order memory bid = bulletin.getOrder(
             address(pair),
             mm,
+            0,
             nonce
         );
         assertEq(bid.signer, mm);
@@ -505,6 +514,7 @@ contract IntegrationTest is Setup {
             bid.premiumPerUnit,
             bid.validTillTimestamp,
             bid.allowPartialFill,
+            bid.channel,
             bid.signature // ← the stored Bulletin signature
         );
 
@@ -547,6 +557,7 @@ contract IntegrationTest is Setup {
             premium,
             validTill,
             false,
+            0,
             nonce
         );
         weth.mint(address(funder), size); // funder must hold the collateral (1 WETH for a call)
@@ -558,6 +569,7 @@ contract IntegrationTest is Setup {
             premium,
             int128(signedSize),
             validTill,
+            0,
             nonce,
             sig
         );
@@ -566,6 +578,7 @@ contract IntegrationTest is Setup {
         IBulletin.Order memory offer = bulletin.getOrder(
             address(pair),
             mm,
+            0,
             nonce
         );
         assertEq(offer.signer, mm);
@@ -591,6 +604,7 @@ contract IntegrationTest is Setup {
             offer.premiumPerUnit,
             offer.validTillTimestamp,
             offer.allowPartialFill,
+            offer.channel,
             offer.signature // ← the stored Bulletin signature
         );
 
@@ -638,6 +652,7 @@ contract IntegrationTest is Setup {
             premium0,
             validTill,
             false,
+            0,
             0 // nonce 0 — valid right now
         );
         bytes memory sig1 = _signQuote(
@@ -648,6 +663,7 @@ contract IntegrationTest is Setup {
             premium1,
             validTill,
             false,
+            0,
             1 // nonce 1 — valid only after bid0 fills
         );
 
@@ -663,6 +679,7 @@ contract IntegrationTest is Setup {
             int128(signedSize),
             validTill,
             0,
+            0,
             sig0
         );
         bulletin.post(
@@ -672,11 +689,12 @@ contract IntegrationTest is Setup {
             premium1,
             int128(signedSize),
             validTill,
+            0,
             1,
             sig1
         );
-        assertEq(bulletin.getOrder(address(pair), mm, 0).nonce, 0);
-        assertEq(bulletin.getOrder(address(pair), mm, 1).nonce, 1);
+        assertEq(bulletin.getOrder(address(pair), mm, 0, 0).nonce, 0);
+        assertEq(bulletin.getOrder(address(pair), mm, 0, 1).nonce, 1);
 
         // ── sellerA fills bid0 ────────────────────────────────────────────────
         address sellerA = makeAddr("sellerA");
@@ -684,7 +702,7 @@ contract IntegrationTest is Setup {
         vm.prank(sellerA);
         weth.approve(address(pair), size);
 
-        IBulletin.Order memory bid0 = bulletin.getOrder(address(pair), mm, 0);
+        IBulletin.Order memory bid0 = bulletin.getOrder(address(pair), mm, 0, 0);
         vm.prank(sellerA);
         pair.sell(
             bid0.funder,
@@ -694,6 +712,7 @@ contract IntegrationTest is Setup {
             bid0.premiumPerUnit,
             bid0.validTillTimestamp,
             bid0.allowPartialFill,
+            bid0.channel,
             bid0.signature
         );
 
@@ -706,7 +725,7 @@ contract IntegrationTest is Setup {
         vm.prank(sellerB);
         weth.approve(address(pair), size);
 
-        IBulletin.Order memory bid1 = bulletin.getOrder(address(pair), mm, 1);
+        IBulletin.Order memory bid1 = bulletin.getOrder(address(pair), mm, 0, 1);
         vm.prank(sellerB);
         pair.sell(
             bid1.funder,
@@ -716,6 +735,7 @@ contract IntegrationTest is Setup {
             bid1.premiumPerUnit,
             bid1.validTillTimestamp,
             bid1.allowPartialFill,
+            bid1.channel,
             bid1.signature
         );
 

@@ -206,4 +206,28 @@ contract BulletinTest is Setup {
         assertEq(order.size,   0);
         assertEq(order.funder, address(0));
     }
+
+    // =========================================================================
+    // Channel isolation
+    // =========================================================================
+
+    function test_post_differentChannels_storedIndependently() public {
+        uint256 validTill = block.timestamp + 1 hours;
+
+        // Post bid on channel 0, nonce 0
+        bytes memory sig0 = _signQuote(address(funder), address(pair), mmPrivateKey, int256(BID_SIZE), uint256(PREMIUM_PER_UNIT), validTill, false, 0, 0);
+        bulletin.post(address(pair), mm, address(funder), PREMIUM_PER_UNIT, BID_SIZE, validTill, 0, 0, sig0);
+
+        // Post offer on channel 1, nonce 0
+        bytes memory sig1 = _signQuote(address(funder), address(pair), mmPrivateKey, int256(OFFER_SIZE), uint256(PREMIUM_PER_UNIT), validTill, false, 1, 0);
+        bulletin.post(address(pair), mm, address(funder), PREMIUM_PER_UNIT, OFFER_SIZE, validTill, 1, 0, sig1);
+
+        // Both stored independently
+        IBulletin.Order memory orderCh0 = bulletin.getOrder(address(pair), mm, 0, 0);
+        IBulletin.Order memory orderCh1 = bulletin.getOrder(address(pair), mm, 1, 0);
+        assertEq(orderCh0.size, BID_SIZE);
+        assertEq(orderCh0.channel, 0);
+        assertEq(orderCh1.size, OFFER_SIZE);
+        assertEq(orderCh1.channel, 1);
+    }
 }

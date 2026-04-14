@@ -14,15 +14,15 @@ interface IBulletin {
     // --- Structs ---
 
     struct Order {
-        address funder;          // Funder or MultiFunder contract holding the funds
-        address signer;          // Authorised signer on the funder whose quote is stored
-        uint128 premiumPerUnit;  // Premium per 1e18 units of size (rate, not total)
-        int128  size;            // Signed notional size: positive = buy (bid), negative = sell (offer)
+        address funder; // Funder or MultiFunder contract holding the funds
+        address signer; // Authorised signer on the funder whose quote is stored
+        uint128 premiumPerUnit; // Premium per 1e18 units of size (rate, not total)
+        int128 size; // Signed notional size: positive = buy (bid), negative = sell (offer)
         uint256 validTillTimestamp;
-        uint256 channel;         // Nonce channel this signature was made for
-        uint256 nonce;           // Per-channel nonce this signature was made for
-        bool    allowPartialFill; // Always false for Bulletin orders
-        bytes   signature;
+        uint256 channel; // Nonce channel this signature was made for
+        uint256 nonce; // Per-channel nonce this signature was made for
+        bool allowPartialFill; // Always false for Bulletin orders
+        bytes signature;
     }
 
     // --- Errors ---
@@ -33,7 +33,11 @@ interface IBulletin {
     /// @param vault   The OPair this order is for.
     /// @param signer  The address whose signature was verified.
     /// @param order   The stored order details.
-    event OrderPosted(address indexed vault, address indexed signer, Order order);
+    event OrderPosted(
+        address indexed vault,
+        address indexed signer,
+        Order order
+    );
 
     // --- Functions ---
 
@@ -63,5 +67,10 @@ interface IBulletin {
     ) external;
 
     /// @notice Returns the order posted by `signer` for `vault` at `(channel, nonce)`, or a zeroed struct if none.
-    function getOrder(address vault, address signer, uint256 channel, uint256 nonce) external view returns (Order memory);
+    function getOrder(
+        address vault,
+        address signer,
+        uint256 channel,
+        uint256 nonce
+    ) external view returns (Order memory);
 }
