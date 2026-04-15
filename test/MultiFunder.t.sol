@@ -171,9 +171,9 @@ contract MultiFunderTest is Setup {
         multiFunder.requestFunds(mm, address(usdc), premium);
     }
 
-    function test_requestFunds_revertsNotValidVault() public {
+    function test_requestFunds_revertsNotValidPair() public {
         vm.prank(address(0xdead));
-        vm.expectRevert(FunderBase.NotValidVault.selector);
+        vm.expectRevert(FunderBase.NotValidPair.selector);
         multiFunder.requestFunds(mm, address(usdc), 100e6);
     }
 

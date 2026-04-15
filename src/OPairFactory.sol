@@ -15,11 +15,6 @@ contract OPairFactory is AccessControl {
     // All pairs deployed by this factory.
     mapping(address => bool) public isPair;
 
-    // Backward-compatible alias used by Funder.sol (checks isVault(msg.sender)).
-    function isVault(address pair) external view returns (bool) {
-        return isPair[pair];
-    }
-
     // Lookup: keccak256(riskToken, cashToken, strike, expiry, isCall) → pair address.
     mapping(bytes32 => address) public pairs;
     event PairCreated(address indexed pair);

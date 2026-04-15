@@ -86,23 +86,6 @@ contract OPairFactoryTest is Test {
         assertFalse(factory.isPair(address(0xdead)));
     }
 
-    function test_createPair_isVaultAliasWorks() public {
-        vm.prank(admin);
-        address pairAddr = factory.createPair(
-            address(weth),
-            address(usdc),
-            STRIKE,
-            EXPIRY,
-            true,
-            MIN_DEPOSIT,
-            ID,
-            SYM
-        );
-
-        assertTrue(factory.isVault(pairAddr));
-        assertFalse(factory.isVault(address(0xdead)));
-    }
-
     function test_createPair_storesInPairsMapping() public {
         vm.prank(admin);
         address pairAddr = factory.createPair(

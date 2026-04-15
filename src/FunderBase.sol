@@ -8,10 +8,10 @@ import {IFunderBase} from "./interfaces/IFunderBase.sol";
 
 /// @title FunderBase
 /// @notice Shared base for Funder and MultiFunder. Holds the factory reference,
-///         the onlyValidVault guard, and AccessControl (DEFAULT_ADMIN_ROLE granted
+///         the onlyValidPair guard, and AccessControl (DEFAULT_ADMIN_ROLE granted
 ///         to the deployer). The admin may update the factory address via setFactory.
 abstract contract FunderBase is IFunderBase, AccessControl {
-    error NotValidVault();
+    error NotValidPair();
 
     /// @notice The factory whose pairs are authorised to call requestFunds.
     IOPairFactory public factory;
@@ -30,8 +30,8 @@ abstract contract FunderBase is IFunderBase, AccessControl {
     }
 
     /// @dev Reverts if the caller is not a pair created by this factory.
-    modifier onlyValidVault() {
-        if (!factory.isVault(msg.sender)) revert NotValidVault();
+    modifier onlyValidPair() {
+        if (!factory.isPair(msg.sender)) revert NotValidPair();
         _;
     }
 }

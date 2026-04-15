@@ -16,7 +16,7 @@ import {IFunderBase} from "./interfaces/IFunderBase.sol";
 ///         transfers on their behalf.
 ///
 /// @dev OPair verifies signatures and manages nonces. Funder only transfers funds when
-///      called by a valid vault (factory.isPair) for an address holding SIGNER_ROLE.
+///      called by a valid pair (factory.isPair) for an address holding SIGNER_ROLE.
 contract Funder is IFunder, FunderBase {
     using SafeERC20 for IERC20;
 
@@ -41,14 +41,14 @@ contract Funder is IFunder, FunderBase {
         emit FundsWithdrawn(token, amount);
     }
 
-    // --- Vault interface ---
+    // --- Pair interface ---
 
     /// @inheritdoc IFunderBase
     function requestFunds(
         address signer,
         address token,
         uint256 acquireAmount
-    ) external override onlyValidVault {
+    ) external override onlyValidPair {
         if (!hasRole(SIGNER_ROLE, signer))
             revert AccessControlUnauthorizedAccount(signer, SIGNER_ROLE);
 
