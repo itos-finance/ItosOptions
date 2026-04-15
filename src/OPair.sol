@@ -582,17 +582,18 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
         // decreases from total exercised and especially because we call it with preferExercised=true.
         // Thus we just have to decrease the totalExercised by the non-netted portion.
         uint256 netted = _addLong(msg.sender, size, true);
-        totalExercised -= size - netted;
-
         // Only do the physical swap for the non-netted portion.
         uint128 physical = size - uint128(netted);
+        // And only the physical is unexercised here.
+        totalExercised -= physical;
+
         if (physical > 0) {
             uint256 depositAmt = physical;
             uint256 swapAmt = physical;
             if (isCall) {
-                swapAmt = _cashAmount(physical, true);
+                swapAmt = _cashAmount(physical, false);
             } else {
-                depositAmt = _cashAmount(physical, false);
+                depositAmt = _cashAmount(physical, true);
             }
 
             swapToken.safeTransfer(callbackContract, swapAmt);
