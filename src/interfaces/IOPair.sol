@@ -53,7 +53,9 @@ interface IOPair {
         uint128 size,
         uint128 premium,
         uint256 sellerNetted,
-        uint256 buyerNetted
+        uint256 buyerNetted,
+        uint256 channel,
+        uint256 nonce
     );
     event Bought(
         address indexed buyer,
@@ -61,7 +63,9 @@ interface IOPair {
         uint128 size,
         uint128 premium,
         uint256 buyerNetted,
-        uint256 sellerNetted
+        uint256 sellerNetted,
+        uint256 channel,
+        uint256 nonce
     );
     event Exercised(address indexed buyer, uint128 size);
     event Unexercised(address indexed buyer, uint128 size);

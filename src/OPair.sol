@@ -381,7 +381,9 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
             fill,
             uint128(totalPremium),
             fill - physicalSize,
-            buyerNetted
+            buyerNetted,
+            channel,
+            nonces[buyerSigner][channel] - 1
         );
     }
 
@@ -465,7 +467,9 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
             fill,
             uint128(totalPremium),
             buyerNetted,
-            fill - physicalSize
+            fill - physicalSize,
+            channel,
+            nonces[sellerSigner][channel] - 1
         );
     }
 

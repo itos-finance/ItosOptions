@@ -208,7 +208,7 @@ contract OPairTest is Setup {
 
         vm.prank(seller);
         vm.expectEmit(true, true, false, true);
-        emit IOPair.Sold(seller, mm, size, premium, 0, 0);
+        emit IOPair.Sold(seller, mm, size, premium, 0, 0, 0, 0);
         pair.sell(address(funder), mm, size, size, premium, validTill, true, 0, sig);
     }
 
@@ -449,7 +449,7 @@ contract OPairTest is Setup {
 
         vm.prank(buyer);
         vm.expectEmit(true, true, false, true);
-        emit IOPair.Bought(buyer, mm, size, premium, 0, 0);
+        emit IOPair.Bought(buyer, mm, size, premium, 0, 0, 0, 0);
         pair.buy(address(funder), mm, size, size, premium, validTill, true, 0, sig);
     }
 
