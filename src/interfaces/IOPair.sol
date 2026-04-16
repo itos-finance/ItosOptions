@@ -31,6 +31,7 @@ interface IOPair {
     error ExpiryTooSoon();
     error FillExceedsQuotedSize();
     error PartialFillNotAllowed();
+    error SelfTrade();
 
     // -------------------------------------------------------------------------
     // Events
@@ -78,8 +79,8 @@ interface IOPair {
     );
     event Netted(
         address indexed account,
-        uint256 depositSettled,
-        uint256 swapSettled
+        address indexed counterparty,
+        uint256 toNet
     );
     event ExpiryExtended(uint256 newExpiry);
     event DepositDeadlineUpdated(uint256 newDeadline);

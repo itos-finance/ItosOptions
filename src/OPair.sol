@@ -330,6 +330,7 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
         if (fill > size) revert FillExceedsQuotedSize();
         if (!allowPartialFill && fill < size) revert PartialFillNotAllowed();
         if (fill < minDepositSize) revert BelowMinDeposit();
+        if (msg.sender == buyerSigner) revert SelfTrade();
 
         address seller = msg.sender;
 
@@ -357,7 +358,7 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
         }
 
         // Buyer acquires a long position for `fill` units.
-        uint256 buyerNetted = _addLong(buyerSigner, fill, false);
+        uint256 buyerNetted = _addLong(buyerSigner, fill, seller);
 
         // Pull premium from buyer's Funder. Total = premiumPerUnit * fill / 1e18.
         uint256 totalPremium = _mulDiv18(premiumPerUnit, fill, true);
@@ -407,6 +408,7 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
         if (fill > size) revert FillExceedsQuotedSize();
         if (!allowPartialFill && fill < size) revert PartialFillNotAllowed();
         if (fill < minDepositSize) revert BelowMinDeposit();
+        if (msg.sender == sellerSigner) revert SelfTrade();
 
         address buyer = msg.sender;
 
@@ -440,7 +442,7 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
         }
 
         // Buyer acquires a long position for `fill` units.
-        uint256 buyerNetted = _addLong(buyer, fill, false);
+        uint256 buyerNetted = _addLong(buyer, fill, sellerSigner);
 
         // Buyer pays premium. Total = premiumPerUnit * fill / 1e18.
         uint256 totalPremium = _mulDiv18(premiumPerUnit, fill, true);
@@ -574,20 +576,22 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
         if (exercised[msg.sender] < size)
             revert InsufficientExercisedPosition();
 
-        exercised[msg.sender] -= size;
-
-        // We decrease their exercise and increase their long. This could cause some netting.
-        // 1. Any amount that is not netted just decreases our total exercised size.
-        // 2. Any amount that is netted, also decreases the total exercised, but settlNetted already
-        // decreases from total exercised and especially because we call it with preferExercised=true.
-        // Thus we just have to decrease the totalExercised by the non-netted portion.
-        uint256 netted = _addLong(msg.sender, size, true);
-        // Only do the physical swap for the non-netted portion.
+        // Decrease exercise and increase long. The counterparty for the netting
+        // is msg.sender itself: the backing for the newly-long position comes
+        // from the caller's own existing exercised balance, which was funded by
+        // a prior exercise() paying swap tokens into this vault.
+        //
+        // _settleNetted(counterparty == account) decrements exercised[msg.sender]
+        // and totalExercised by `netted` in lockstep and credits settledSwapToken.
+        // The physical remainder (if any) is swapped back through the callback,
+        // and we decrement exercised[msg.sender] / totalExercised for that part
+        // here — keeping the two state variables in lockstep at every site.
+        uint256 netted = _addLong(msg.sender, size, msg.sender);
         uint128 physical = size - uint128(netted);
-        // And only the physical is unexercised here.
-        totalExercised -= physical;
 
         if (physical > 0) {
+            exercised[msg.sender] -= physical;
+            totalExercised -= physical;
             uint256 depositAmt = physical;
             uint256 swapAmt = physical;
             if (isCall) {
@@ -761,18 +765,22 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
     // If user is currently short, their opposing short is netted first:
     //   - netPosition adjusted (OShortToken balance decreases accordingly, as it derives from netPosition)
     //   - settled collateral stored for claimSettled()
-    //   - totalSold and totalExercised decremented
+    //   - totalSold decremented; totalExercised only decremented when counterparty == user (unexercise path)
+    // `counterparty` identifies who is providing the unexercised backing for the netting:
+    //   - sell flow: msg.sender (the seller)
+    //   - buy flow:  sellerSigner (MM)
+    //   - unexercise: user itself — netting backed by user's existing exercised position
     // Returns the number of units that were netted from an existing short.
     function _addLong(
         address user,
         uint128 size,
-        bool preferExercised
+        address counterparty
     ) internal returns (uint256 netted) {
         int256 pos = netPosition[user];
         if (pos < 0) {
             uint256 shortSize = uint256(-pos);
             netted = shortSize >= size ? size : shortSize;
-            _settleNetted(user, netted, preferExercised);
+            _settleNetted(user, netted, counterparty);
         }
         netPosition[user] = pos + int256(uint256(size));
     }
@@ -800,35 +808,35 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
     }
 
     /// Settle `toNet` units of `account`'s existing short position.
-    /// @dev Always takes from the unexercised pool first, then the exercised pool.
-    /// @dev only before expiry code can reach this which is why the preference is unexercised.
+    ///
+    /// `counterparty` documents who provides the unexercised backing for the netting:
+    ///   - sell flow: the seller (msg.sender) — fresh deposit and/or per-user-tracked long reduction
+    ///   - buy flow:  the sell-side signer (MM) — funder-provided fresh deposit and/or MM's long reduction
+    ///   - unexercise: `account` itself — backed by account's existing exercised position
+    ///
+    /// When counterparty == account this is the unexercise self-backing case: the user is adding
+    /// a long by reducing their exercised position. Thus their netted claims are in the exercised swap token.
+    ///
+    /// When counterparty != account the counterparty's contribution is unexercised
+    /// by construction since the seller is either depositing more deposit tokens or netting a long position which
+    /// is also backed by an unexercised deposit balance so
+    /// we settle entirely in depositToken and leave exercised balances untouched.
+    /// @dev Self-trades are rejected at the sell()/buy() entry points so this
+    /// function's counterparty==account branch can only be reached from unexercise().
     function _settleNetted(
         address account,
         uint256 toNet,
-        bool preferExercised
+        address counterparty
     ) internal {
-        uint256 totalUnexercised = totalSold - totalExercised;
-        uint256 fromExercised;
-        uint256 fromUnexercised;
-
-        if (preferExercised) {
-            fromExercised = toNet > totalExercised ? totalExercised : toNet;
-            fromUnexercised = toNet - fromExercised;
+        if (counterparty == account) {
+            exercised[account] -= toNet;
+            totalExercised -= toNet;
+            settledSwapToken[account] += toNet;
         } else {
-            fromUnexercised = toNet > totalUnexercised
-                ? totalUnexercised
-                : toNet;
-            fromExercised = toNet - fromUnexercised;
+            settledDepositToken[account] += toNet;
         }
-
-        // Longs clear previously sold contracts.
-        totalExercised -= fromExercised;
         totalSold -= toNet;
-
-        settledDepositToken[account] += fromUnexercised;
-        settledSwapToken[account] += fromExercised;
-
-        emit Netted(account, fromUnexercised, fromExercised);
+        emit Netted(account, counterparty, toNet);
     }
 
     function _cashAmount(

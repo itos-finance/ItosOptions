@@ -18,6 +18,24 @@ contract OPairTest is Setup {
         pair = _createCallPair();
     }
 
+    // @dev `other` (as buyer) buys `size` from mm (as seller via the shared funder).
+    function _buyAsOther(address _other, uint128 size, uint128 premium) internal {
+        usdc.mint(_other, premium);
+        vm.prank(_other);
+        usdc.approve(address(pair), premium);
+        weth.mint(address(funder), size);
+
+        uint256 nonce = pair.nonces(mm, 0);
+        uint256 validTill = block.timestamp + 1 hours;
+        uint128 premiumPerUnit = uint128(uint256(premium) * 1e18 / uint256(size));
+        bytes memory sig = _signQuote(
+            address(funder), address(pair), mmPrivateKey,
+            -int256(uint256(size)), premiumPerUnit, validTill, true, 0, nonce
+        );
+        vm.prank(_other);
+        pair.buy(address(funder), mm, size, size, premiumPerUnit, validTill, true, 0, sig);
+    }
+
     // =========================================================================
     // sell
     // =========================================================================
@@ -765,6 +783,192 @@ contract OPairTest is Setup {
         assertEq(pair.netPosition(mm), -int256(1e18));
         // Only 1e18 physically added (1e18 netted)
         assertEq(pair.totalSold() - totalSoldBefore, 1e18);
+    }
+
+    // =========================================================================
+    // Self-trade rejection
+    // =========================================================================
+
+    function test_sell_revertsSelfTrade() public {
+        // mm signs a buy quote (positive size) and then tries to fill it as seller.
+        uint128 size = 1e18;
+        uint128 premium = 100e6;
+        uint128 premiumPerUnit = premium;
+        uint256 validTill = block.timestamp + 1 hours;
+
+        weth.mint(mm, size);
+        vm.prank(mm);
+        weth.approve(address(pair), size);
+        usdc.mint(address(funder), premium);
+
+        bytes memory sig = _signQuote(
+            address(funder), address(pair), mmPrivateKey,
+            int256(uint256(size)), premiumPerUnit, validTill, true, 0, 0
+        );
+
+        vm.prank(mm);
+        vm.expectRevert(IOPair.SelfTrade.selector);
+        pair.sell(address(funder), mm, size, size, premiumPerUnit, validTill, true, 0, sig);
+    }
+
+    function test_buy_revertsSelfTrade() public {
+        // mm signs a sell quote (negative size) and then tries to fill it as buyer.
+        uint128 size = 1e18;
+        uint128 premium = 100e6;
+        uint128 premiumPerUnit = premium;
+        uint256 validTill = block.timestamp + 1 hours;
+
+        usdc.mint(mm, premium);
+        vm.prank(mm);
+        usdc.approve(address(pair), premium);
+        weth.mint(address(funder), size);
+
+        bytes memory sig = _signQuote(
+            address(funder), address(pair), mmPrivateKey,
+            -int256(uint256(size)), premiumPerUnit, validTill, true, 0, 0
+        );
+
+        vm.prank(mm);
+        vm.expectRevert(IOPair.SelfTrade.selector);
+        pair.buy(address(funder), mm, size, size, premiumPerUnit, validTill, true, 0, sig);
+    }
+
+    function test_take_revertsSelfTrade_sellSide() public {
+        // take() with negative size dispatches to sell().
+        uint128 size = 1e18;
+        uint128 premium = 100e6;
+        uint128 premiumPerUnit = premium;
+        uint256 validTill = block.timestamp + 1 hours;
+
+        weth.mint(mm, size);
+        vm.prank(mm);
+        weth.approve(address(pair), size);
+        usdc.mint(address(funder), premium);
+
+        // take() is called with the opposite sign (negative size = sell path),
+        // but the signed quote is still the counterparty's (buy intent, +size).
+        bytes memory sig = _signQuote(
+            address(funder), address(pair), mmPrivateKey,
+            int256(uint256(size)), premiumPerUnit, validTill, true, 0, 0
+        );
+
+        vm.prank(mm);
+        vm.expectRevert(IOPair.SelfTrade.selector);
+        pair.take(address(funder), mm, -int128(size), size, premiumPerUnit, validTill, true, 0, sig);
+    }
+
+    function test_take_revertsSelfTrade_buySide() public {
+        uint128 size = 1e18;
+        uint128 premium = 100e6;
+        uint128 premiumPerUnit = premium;
+        uint256 validTill = block.timestamp + 1 hours;
+
+        usdc.mint(mm, premium);
+        vm.prank(mm);
+        usdc.approve(address(pair), premium);
+        weth.mint(address(funder), size);
+
+        bytes memory sig = _signQuote(
+            address(funder), address(pair), mmPrivateKey,
+            -int256(uint256(size)), premiumPerUnit, validTill, true, 0, 0
+        );
+
+        vm.prank(mm);
+        vm.expectRevert(IOPair.SelfTrade.selector);
+        pair.take(address(funder), mm, int128(size), size, premiumPerUnit, validTill, true, 0, sig);
+    }
+
+    // =========================================================================
+    // Unexercise netting — swap-token settlement + per-user exercised decrement
+    // =========================================================================
+
+    function test_unexercise_fullyNetted_settlesSwapTokenAndSkipsCallback() public {
+        // Setup: mm longs 2, exercises 2, then shorts 1. Now unexercise 1 → fully netted.
+        _doSell(pair, seller, 2e18, 200e6);
+        _fundCallbackForExercise(pair, 2e18);
+        vm.warp(pair.exerciseEarliest());
+        vm.prank(mm);
+        pair.exercise(2e18, address(callback), "");
+        _doBuy(pair, buyer, 1e18, 100e6);
+
+        assertEq(pair.netPosition(mm), -int256(1e18));
+        assertEq(pair.exercised(mm), 2e18);
+        assertEq(pair.totalExercised(), 2e18);
+
+        uint256 swapBefore = pair.settledSwapToken(mm);
+        uint256 callbackWethBefore = weth.balanceOf(address(callback));
+
+        // Note: no _fundCallbackForUnexercise call — fully-netted path must NOT touch callback.
+        vm.prank(mm);
+        pair.unexercise(1e18, address(callback), "");
+
+        // Fully netted: netPosition moves from -1 to 0; exercised[mm] -= 1; totalExercised -= 1;
+        // settledSwapToken[mm] += 1e18.
+        assertEq(pair.netPosition(mm), 0);
+        assertEq(pair.exercised(mm), 1e18);
+        assertEq(pair.totalExercised(), 1e18);
+        assertEq(pair.settledSwapToken(mm) - swapBefore, 1e18);
+        // Callback was not invoked (no transfer in or out).
+        assertEq(weth.balanceOf(address(callback)), callbackWethBefore);
+    }
+
+    function test_unexercise_partiallyNetted_settlesAndSwapsRemainder() public {
+        // Setup: mm longs 3, exercises 3, shorts 1. Unexercise 2 → 1 netted, 1 physical.
+        _doSell(pair, seller, 3e18, 300e6);
+        _fundCallbackForExercise(pair, 3e18);
+        vm.warp(pair.exerciseEarliest());
+        vm.prank(mm);
+        pair.exercise(3e18, address(callback), "");
+        _doBuy(pair, buyer, 1e18, 100e6);
+
+        assertEq(pair.netPosition(mm), -int256(1e18));
+        assertEq(pair.exercised(mm), 3e18);
+
+        uint256 swapBefore = pair.settledSwapToken(mm);
+        // Only need to fund callback for the physical (non-netted) portion: 1e18.
+        _fundCallbackForUnexercise(pair, 1e18);
+
+        vm.prank(mm);
+        pair.unexercise(2e18, address(callback), "");
+
+        // 1e18 netted against short, 1e18 physically swapped.
+        assertEq(pair.netPosition(mm), int256(1e18));
+        assertEq(pair.exercised(mm), 1e18);
+        assertEq(pair.totalExercised(), 1e18);
+        assertEq(pair.settledSwapToken(mm) - swapBefore, 1e18);
+    }
+
+    function test_invariant_exercisedSumEqualsTotal_complexFlow() public {
+        // Build up several exercised positions, then do trades that cause netting,
+        // and finally unexercise. Assert sum(exercised[*]) == totalExercised at each step.
+        address other = makeAddr("other");
+
+        // Step 1: mm goes long 4, exercises 3. seller is short 4.
+        _doSell(pair, seller, 4e18, 400e6);
+        _fundCallbackForExercise(pair, 3e18);
+        vm.warp(pair.exerciseEarliest());
+        vm.prank(mm);
+        pair.exercise(3e18, address(callback), "");
+        assertEq(pair.exercised(mm) + pair.exercised(seller) + pair.exercised(buyer) + pair.exercised(other), pair.totalExercised());
+
+        // Step 2: `other` buys 1 from mm (mm sells via funder). mm was long 1, now long 0.
+        _buyAsOther(other, 1e18, 100e6);
+        // mm had netPosition=1, now 0. exercised[mm] unchanged.
+        assertEq(pair.netPosition(mm), 0);
+        assertEq(pair.exercised(mm), 3e18);
+        assertEq(pair.exercised(mm) + pair.exercised(seller) + pair.exercised(buyer) + pair.exercised(other), pair.totalExercised());
+
+        // Step 3: `other` now long, buys another 1 from mm. mm goes from 0 → -1 short.
+        _buyAsOther(other, 1e18, 100e6);
+        assertEq(pair.netPosition(mm), -int256(1e18));
+        assertEq(pair.exercised(mm) + pair.exercised(seller) + pair.exercised(buyer) + pair.exercised(other), pair.totalExercised());
+
+        // Step 4: mm unexercises 2 — 1 nets against short, 1 goes through physical swap.
+        _fundCallbackForUnexercise(pair, 1e18);
+        vm.prank(mm);
+        pair.unexercise(2e18, address(callback), "");
+        assertEq(pair.exercised(mm), 1e18);
+        assertEq(pair.exercised(mm) + pair.exercised(seller) + pair.exercised(buyer) + pair.exercised(other), pair.totalExercised());
     }
 
     // =========================================================================
