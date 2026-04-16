@@ -59,6 +59,38 @@ contract OPairTest is Setup {
         assertEq(pair.totalFees(), fee);
     }
 
+    function test_sell_premiumRoundsUp_whenProductNotExact() public {
+        // premiumPerUnit * fill is NOT divisible by 1e18.
+        // The protocol should round UP (charge buyer the ceiling amount).
+        // Bug: _mulDiv18 checks mod(m, d) instead of mod(p, d), so roundUp never fires.
+        uint128 size = 1e18 + 1;   // just over 1 unit
+        uint128 fill = size;
+        uint128 premiumPerUnit = 100e6; // 100 USDC per 1e18 units
+
+        // Expected premium = ceil(premiumPerUnit * fill / 1e18)
+        //   = ceil(100000000 * 1000000000000000001 / 1e18)
+        //   = ceil(100000000.0000000001)
+        //   = 100000001
+        // Buggy result = floor(...) = 100000000
+        uint256 expectedPremium = 100000001;
+
+        weth.mint(seller, fill);
+        vm.prank(seller);
+        weth.approve(address(pair), fill);
+        usdc.mint(address(funder), expectedPremium);
+
+        bytes memory sig = _signQuote(
+            address(funder), address(pair), mmPrivateKey,
+            int256(uint256(size)), premiumPerUnit, block.timestamp + 1 hours, true, 0, 0
+        );
+        vm.prank(seller);
+        pair.sell(address(funder), mm, size, fill, premiumPerUnit, block.timestamp + 1 hours, true, 0, sig);
+
+        // The total premium pulled should be the ceiling, not the floor.
+        uint256 fee = (expectedPremium * pair.FEE_BPS()) / pair.BPS();
+        assertEq(usdc.balanceOf(seller), expectedPremium - fee);
+    }
+
     function test_sell_revertsAfterDepositDeadline() public {
         vm.warp(pair.depositDeadline());
 

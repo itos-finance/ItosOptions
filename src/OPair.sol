@@ -860,7 +860,7 @@ contract OPair is IOPair, ReentrancyGuardTransient, SigVerifier {
         uint256 d = 1e18;
         assembly ("memory-safe") {
             let p := mul(a, b)
-            m := add(div(p, d), and(roundUp, gt(mod(m, d), 0)))
+            m := add(div(p, d), and(roundUp, gt(mod(p, d), 0)))
         }
     }
 }
