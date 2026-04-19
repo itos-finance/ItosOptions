@@ -4,7 +4,11 @@ out = "out"
 libs = ["lib"]
 via_ir = true
 optimizer = true
-optimizer_runs = 10_000
+# Lowered from 10_000 to 200 so OPairFactory (which embeds OPair's creation
+# bytecode) fits under EIP-170's 24_576 byte limit after the channel/nonce
+# additions. Trade-off: slightly higher runtime gas per call in exchange for
+# smaller deployment bytecode.
+optimizer_runs = 200
 remappings = [
     "forge-std/=lib/forge-std/src/",
     "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
