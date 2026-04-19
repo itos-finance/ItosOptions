@@ -30,12 +30,12 @@ abstract contract FunderBase is IFunderBase, AccessControl {
     }
 
     /// @dev Reverts if the caller is not a pair created by this factory.
-    modifier onlyValidVault() {
-        _onlyValidVault();
+    modifier onlyValidPair() {
+        _onlyValidPair();
         _;
     }
 
-    function _onlyValidVault() internal view {
-        if (!factory.isVault(msg.sender)) revert NotValidVault();
+    function _onlyValidPair() internal view {
+        if (!factory.isPair(msg.sender)) revert NotValidPair();
     }
 }
