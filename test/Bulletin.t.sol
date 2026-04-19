@@ -151,7 +151,7 @@ contract BulletinTest is Setup {
         bulletin.post(address(pair), mm, address(funder), PREMIUM_PER_UNIT, 0, validTill, 0, 0, sig);
     }
 
-    function test_post_revertsVaultNotFromFactory() public {
+    function test_post_revertsPairNotFromFactory() public {
         uint256 validTill = block.timestamp + 1 hours;
         bytes memory sig = _signBulletinQuote(address(funder), address(0xdead), mmPrivateKey, BID_SIZE, PREMIUM_PER_UNIT, validTill, 0);
 

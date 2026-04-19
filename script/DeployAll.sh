@@ -163,8 +163,7 @@ cat > "$OUTPUT" <<ENDJSON
     "factory": "$FACTORY",
     "funder": "$FUNDER",
     "multiFunder": "$MULTI_FUNDER",
-    "bulletin": "$BULLETIN",
-    "pair_weth_usdc_call": "$PAIR"
+    "bulletin": "$BULLETIN"
   }
 }
 ENDJSON

@@ -31,7 +31,7 @@ function createPair(
 ```
 
 - Pairs are keyed by `keccak256(riskToken, cashToken, strike, expiry, isCall)` — duplicates revert.
-- `isPair(addr)` / `isVault(addr)` (alias) — used by FundingVerifier to gate `requestFunds` callers.
+- `isPair(addr)` — used by FunderBase and Bulletin to gate `requestFunds` callers.
 
 ---
 
@@ -201,7 +201,7 @@ function _recoverSigner(address funder, address vault, uint256 size, uint256 pri
 function _verifyQuote(address expectedSigner, uint256 currentNonce, uint256 size, uint256 pricePerOption, uint256 validTillTimestamp, bytes calldata signature) internal view
 
 // Modifier: reverts if msg.sender is not a pair registered in the factory.
-modifier onlyValidVault()
+modifier onlyValidPair()
 ```
 
 ---
@@ -219,7 +219,7 @@ mapping(address => mapping(address => uint256)) public nonces; // signer → vau
 - `deposit(signer, token, amount)` — permissionless; `signer` arg is emitted but ignored for accounting.
 - `withdraw(token, amount)` — owner only; transfers to `owner`.
 - `addSigner(addr)` / `removeSigner(addr)` — owner only.
-- `requestFunds(signer, token, premium, size, acquireAmount, validTill, sig)` — `onlyValidVault`; reverts if `signer` is not `owner` or an authorized signer; verifies EIP-712 quote; increments `nonces[signer][msg.sender]`; transfers `acquireAmount` tokens to `msg.sender` (may be 0).
+- `requestFunds(signer, token, premium, size, acquireAmount, validTill, sig)` — `onlyValidPair`; reverts if `signer` is not `owner` or an authorized signer; verifies EIP-712 quote; increments `nonces[signer][msg.sender]`; transfers `acquireAmount` tokens to `msg.sender` (may be 0).
 
 ---
 
@@ -234,7 +234,7 @@ mapping(address => mapping(address => uint256)) public nonces;   // signer → v
 
 - `deposit(signer, token, amount)` — permissionless; credits `balances[signer][token]`.
 - `withdraw(token, amount)` — credits `msg.sender`'s own balance only; reverts if insufficient.
-- `requestFunds(signer, token, premium, size, acquireAmount, validTill, sig)` — `onlyValidVault`; checks `balances[signer][token] >= acquireAmount`; verifies quote; decrements balance; transfers `acquireAmount` (may be 0).
+- `requestFunds(signer, token, premium, size, acquireAmount, validTill, sig)` — `onlyValidPair`; checks `balances[signer][token] >= acquireAmount`; verifies quote; decrements balance; transfers `acquireAmount` (may be 0).
 
 ---
 

@@ -42,7 +42,7 @@ contract Bulletin is IBulletin, SigVerifier {
         bytes calldata signature
     ) external {
         if (size == 0) revert ZeroSize();
-        if (!factory.isVault(vault)) revert VaultNotFromFactory();
+        if (!factory.isPair(vault)) revert PairNotFromFactory();
         if (
             signer !=
             _recoverSigner(

@@ -26,7 +26,7 @@ interface IBulletin {
     }
 
     // --- Errors ---
-    error VaultNotFromFactory();
+    error PairNotFromFactory();
     error ZeroSize();
 
     // --- Events ---

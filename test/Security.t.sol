@@ -415,7 +415,7 @@ contract SecurityTest is Setup {
         // attacker is not a registered pair
         address attacker = makeAddr("attacker");
         vm.prank(attacker);
-        vm.expectRevert(FunderBase.NotValidVault.selector);
+        vm.expectRevert(FunderBase.NotValidPair.selector);
         funder.requestFunds(mm, address(usdc), 100e6);
     }
 

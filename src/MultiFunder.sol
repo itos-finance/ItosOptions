@@ -15,7 +15,7 @@ import {IFunderBase} from "./interfaces/IFunderBase.sol";
 ///         All operations are permissionless per-user (each user manages only their own funds).
 ///
 /// @dev OPair verifies signatures and manages nonces. MultiFunder only transfers funds when
-///      called by a valid vault (factory.isPair), debiting the signer's balance.
+///      called by a valid pair (factory.isPair), debiting the signer's balance.
 contract MultiFunder is IMultiFunder, FunderBase {
     using SafeERC20 for IERC20;
 
@@ -42,14 +42,14 @@ contract MultiFunder is IMultiFunder, FunderBase {
         emit FundsWithdrawn(msg.sender, token, amount);
     }
 
-    // --- Vault interface ---
+    // --- Pair interface ---
 
     /// @inheritdoc IFunderBase
     function requestFunds(
         address signer,
         address token,
         uint256 acquireAmount
-    ) external onlyValidVault {
+    ) external onlyValidPair {
         if (balances[signer][token] < acquireAmount)
             revert InsufficientBalance();
 

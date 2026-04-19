@@ -225,11 +225,11 @@ contract FunderTest is Setup {
         assertEq(usdc.balanceOf(address(pair)), 0);
     }
 
-    function test_requestFunds_revertsNotValidVault() public {
+    function test_requestFunds_revertsNotValidPair() public {
         usdc.mint(address(funder), 100e6);
 
         vm.prank(makeAddr("attacker"));
-        vm.expectRevert(FunderBase.NotValidVault.selector);
+        vm.expectRevert(FunderBase.NotValidPair.selector);
         funder.requestFunds(mm, address(usdc), 100e6);
     }
 
