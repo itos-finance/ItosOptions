@@ -10,17 +10,24 @@ interface IMintable {
 }
 
 /// @title MintExerciseCallback
-/// @notice Testnet-only exercise callback that mints the required swap token
-///         via MockERC20's permissionless mint, then returns it to the vault.
+/// @notice Testnet-only exercise callback. Mints the required swap token via
+///         MockERC20's permissionless mint and returns it to the vault, then
+///         best-effort burns the received deposit token (holds it if the token
+///         has no `burn(uint256)` function).
 contract MintExerciseCallback is IExerciseCallback {
     function onExercise(
-        address /* tokenGiven */,
+        address tokenGiven,
         address tokenExpected,
-        uint256 /* amountGiven */,
+        uint256 amountGiven,
         uint256 amountExpected,
         bytes calldata /* data */
     ) external override {
         IMintable(tokenExpected).mint(address(this), amountExpected);
         IERC20(tokenExpected).transfer(msg.sender, amountExpected);
+
+        (bool ok, ) = tokenGiven.call(
+            abi.encodeWithSignature("burn(uint256)", amountGiven)
+        );
+        ok; // best-effort: on failure the tokens simply stay in this contract
     }
 }
