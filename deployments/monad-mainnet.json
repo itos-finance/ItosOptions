@@ -1,0 +1,10 @@
+{
+  "chain_id": 143,
+  "status": "coming_soon",
+  "deployed_at": null,
+  "contracts": {
+    "factory": null,
+    "usdc": null
+  },
+  "maker_funders": {}
+}

@@ -1,0 +1,18 @@
+{
+  "chains": [
+    {
+      "chain_id": 10143,
+      "slug": "monad-testnet",
+      "name": "Monad Testnet",
+      "status": "live",
+      "file": "monad-testnet.json"
+    },
+    {
+      "chain_id": 143,
+      "slug": "monad-mainnet",
+      "name": "Monad",
+      "status": "coming_soon",
+      "file": "monad-mainnet.json"
+    }
+  ]
+}
