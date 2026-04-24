@@ -70,6 +70,29 @@ MIN_DEPOSIT=$(jq -r '.min_deposit_size' "$CONFIG_FILE")
 EXPIRY_TS=$(jq -r '.expiry' "$CONFIG_FILE")
 PAIR_COUNT=$(jq '.pairs | length' "$CONFIG_FILE")
 
+# Sanity check: expiry MUST be 08:00:00 UTC on a Friday. Getting this wrong
+# once cost a whole cycle of misaligned vaults on testnet, so the check is
+# a hard fail rather than a warning. Override with ITOS_SKIP_EXPIRY_CHECK=1
+# for backfill / legacy re-runs only.
+if [ "${ITOS_SKIP_EXPIRY_CHECK:-0}" != "1" ]; then
+  if ! python3 - "$EXPIRY_TS" <<'PY'
+import sys, datetime as dt
+ts = int(sys.argv[1])
+d = dt.datetime.fromtimestamp(ts, tz=dt.timezone.utc)
+ok = d.weekday() == 4 and d.hour == 8 and d.minute == 0 and d.second == 0
+if not ok:
+    sys.stderr.write(
+        f"ERROR: expiry {ts} resolves to {d.strftime('%a %Y-%m-%d %H:%M:%S UTC')}, "
+        f"expected Friday 08:00:00 UTC.\n"
+        f"       Set ITOS_SKIP_EXPIRY_CHECK=1 to override for legacy configs.\n"
+    )
+    sys.exit(1)
+PY
+  then
+    exit 1
+  fi
+fi
+
 # Strike multiplier = 10^(18 + cash_decimals - risk_decimals)
 EXP=$(( 18 + CASH_DEC - RISK_DEC ))
 MULTIPLIER=$(python3 -c "print(10 ** $EXP)")
