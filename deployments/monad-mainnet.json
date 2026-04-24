@@ -3,8 +3,15 @@
   "status": "coming_soon",
   "deployed_at": null,
   "contracts": {
+    "weth": "0xEE8c0E9f1BFFb4Eb878d8f15f368A02a35481242",
+    "usdc": "0x754704Bc059F8C67012fEd69BC8A327a5aafb603",
+    "btc":  "0x0555E30da8f98308EdB960aa94C0Db47230d2B9c",
+    "mon":  "0x3bd359C1119dA7Da1D913D1C4D2B7c461115433A",
     "factory": null,
-    "usdc": null
+    "funder": null,
+    "multiFunder": null,
+    "bulletin": null,
+    "mintExerciseCallback": null
   },
   "maker_funders": {}
 }
