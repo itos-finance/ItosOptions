@@ -1,10 +1,10 @@
 {
-  "description": "BTC/USDC options vaults — generated 2026-04-19, spot $74701.84188573, step 5000",
+  "description": "BTC/USDC options vaults \u2014 generated 2026-04-19, spot $74701.84188573, step 5000",
   "underlying_symbol": "BTC",
   "cash_symbol": "USDC",
-  "risk_token": "0xB663Ed5145bAF523CB14cfF24F914D70eb5b4E18",
+  "risk_token": "0xAFE18570017E9dC4d955280d1c0486cA3b21bAFe",
   "cash_token": "0x5B8477CB67b8A4FF8Df7A83f0Be57a6Cd82d5196",
-  "risk_decimals": 8,
+  "risk_decimals": 18,
   "cash_decimals": 6,
   "min_deposit_size": "1000000",
   "expiry": 1779148800,
