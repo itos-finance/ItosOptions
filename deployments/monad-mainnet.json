@@ -1,17 +1,24 @@
 {
   "chain_id": 143,
-  "status": "coming_soon",
-  "deployed_at": null,
+  "status": "deployed",
+  "deployed_at": "2026-04-27T23:00:09Z",
+  "deploy_block": 70959015,
   "contracts": {
     "weth": "0xEE8c0E9f1BFFb4Eb878d8f15f368A02a35481242",
     "usdc": "0x754704Bc059F8C67012fEd69BC8A327a5aafb603",
     "btc":  "0x0555E30da8f98308EdB960aa94C0Db47230d2B9c",
     "mon":  "0x3bd359C1119dA7Da1D913D1C4D2B7c461115433A",
-    "factory": null,
+    "factory": "0xcaD3e639BE89f673d7dBa41b2614369126CbD38f",
     "funder": null,
     "multiFunder": null,
-    "bulletin": null,
+    "bulletin": "0x26dF93bE14CD67c965242205B9f26A514f00aBda",
     "mintExerciseCallback": null
+  },
+  "token_decimals": {
+    "weth": 18,
+    "usdc": 6,
+    "btc": 8,
+    "mon": 18
   },
   "maker_funders": {}
 }
