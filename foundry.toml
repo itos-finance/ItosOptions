@@ -9,9 +9,29 @@ optimizer = true
 # additions. Trade-off: slightly higher runtime gas per call in exchange for
 # smaller deployment bytecode.
 optimizer_runs = 200
+fs_permissions = [
+    # Scripts read v3-core / v4-core artifact JSONs from out/ to deploy
+    # solc-0.7.6 / solc-0.8.26 contracts via raw bytecode.
+    { access = "read", path = "./out/" },
+]
 remappings = [
     "forge-std/=lib/forge-std/src/",
     "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
+    "v4-core/=lib/v4-core/",
+    "solmate/=lib/v4-core/lib/solmate/",
+    "v3-core/=lib/v3-core/",
+]
+
+# Solc 0.7.6 (used by v3-core) doesn't support modifiers under the IR
+# codegen, so opt that group out of via_ir while leaving the rest of the
+# project on it.
+additional_compiler_profiles = [
+    { name = "no_ir", via_ir = false, optimizer = true, optimizer_runs = 200 },
+]
+
+compilation_restrictions = [
+    { paths = "lib/v3-core/**", via_ir = false },
+    { paths = "test/v3ext/**", via_ir = false },
 ]
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options

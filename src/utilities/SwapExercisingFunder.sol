@@ -52,6 +52,28 @@ interface IPoolManager {
     function take(Currency currency, address to, uint256 amount) external;
 }
 
+// -------------------------------------------------------------------------
+// Minimal Uniswap V3 interface surface. Same rationale as V4: defined inline
+// so this utility has no V3 dependency.
+// -------------------------------------------------------------------------
+interface IUniswapV3Factory {
+    function getPool(
+        address tokenA,
+        address tokenB,
+        uint24 fee
+    ) external view returns (address pool);
+}
+
+interface IUniswapV3Pool {
+    function swap(
+        address recipient,
+        bool zeroForOne,
+        int256 amountSpecified,
+        uint160 sqrtPriceLimitX96,
+        bytes calldata data
+    ) external returns (int256 amount0, int256 amount1);
+}
+
 /// @title SwapExercisingFunder
 /// @notice ExercisingFunder variant that optionally swaps `tokenGiven` into
 ///         `tokenExpected` through a Uniswap V4 pool before paying the vault.
@@ -77,8 +99,25 @@ contract SwapExercisingFunder is ExercisingFunder {
     using SafeERC20 for IERC20;
 
     error NotPoolManager();
+    error NotV3Pool();
     error UnexpectedDelta();
     error InsufficientOutput();
+    error PoolNotFound();
+
+    /// @notice Selector returned by signature verification, telling the
+    ///         dispatcher which AMM to route the swap through.
+    enum SwapKind {
+        V4,
+        V3
+    }
+
+    /// @notice Sentinel placed in `swapData.hooks` to signal that the swap
+    ///         should be executed against Uniswap V3 instead of V4. V3 has
+    ///         no hooks concept, so this field is otherwise unused on the V3
+    ///         path — including the V3 sentinel route's `tickSpacing` value
+    ///         (V3 derives spacing from the fee tier).
+    address public constant V3_HOOK_SENTINEL =
+        address(0x0000000000000000000000000000000000003333);
 
     /// @notice Everything a signer must specify to route a V4 swap. The
     ///         input/output currencies are inferred from `tokenGiven` /
@@ -103,12 +142,15 @@ contract SwapExercisingFunder is ExercisingFunder {
         );
 
     IPoolManager public immutable POOL_MANAGER;
+    IUniswapV3Factory public immutable V3_FACTORY;
 
     constructor(
         address _factory,
-        address _poolManager
+        address _poolManager,
+        address _v3Factory
     ) ExercisingFunder(_factory) {
         POOL_MANAGER = IPoolManager(_poolManager);
+        V3_FACTORY = IUniswapV3Factory(_v3Factory);
     }
 
     /// @inheritdoc ExercisingFunder
@@ -125,10 +167,19 @@ contract SwapExercisingFunder is ExercisingFunder {
             bytes memory signature
         ) = abi.decode(data, (address, SwapData, bytes));
 
-        _verifyAndConsumeSwapSignature(msg.sender, signer, swapData, signature);
+        SwapKind kind = _verifyAndConsumeSwapSignature(
+            msg.sender,
+            signer,
+            swapData,
+            signature
+        );
 
         if (swapData.amountIn != 0) {
-            _executeSwap(tokenGiven, tokenExpected, swapData);
+            if (kind == SwapKind.V3) {
+                _executeSwapV3(tokenGiven, tokenExpected, swapData);
+            } else {
+                _executeSwapV4(tokenGiven, tokenExpected, swapData);
+            }
         }
 
         IERC20(tokenExpected).safeTransfer(msg.sender, amountExpected);
@@ -136,13 +187,16 @@ contract SwapExercisingFunder is ExercisingFunder {
 
     /// @dev Verifies `signer` holds SIGNER_ROLE and that `signature` is a
     ///      valid EIP-712 `ExerciseSwap` signature by `signer` over the
-    ///      vault's current nonce. Advances the nonce on success.
+    ///      vault's current nonce. Advances the nonce on success and returns
+    ///      the swap routing kind, decided by the value of `swapData.hooks`:
+    ///      `V3_HOOK_SENTINEL` selects Uniswap V3, anything else is treated
+    ///      as a V4 hook address.
     function _verifyAndConsumeSwapSignature(
         address vault,
         address signer,
         SwapData memory swapData,
         bytes memory signature
-    ) internal {
+    ) internal returns (SwapKind kind) {
         if (!hasRole(SIGNER_ROLE, signer))
             revert AccessControlUnauthorizedAccount(signer, SIGNER_ROLE);
 
@@ -164,12 +218,16 @@ contract SwapExercisingFunder is ExercisingFunder {
         );
         if (ECDSA.recover(digest, signature) != signer)
             revert InvalidSignature();
+
+        kind = swapData.hooks == V3_HOOK_SENTINEL
+            ? SwapKind.V3
+            : SwapKind.V4;
     }
 
     /// @dev Enters the V4 PoolManager unlock lock and swaps `swapData.amountIn`
     ///      of `tokenGiven` for `tokenExpected`. After return, that amount of
     ///      `tokenGiven` has left the pool and the swap output has arrived.
-    function _executeSwap(
+    function _executeSwapV4(
         address tokenGiven,
         address tokenExpected,
         SwapData memory swapData
@@ -180,6 +238,71 @@ contract SwapExercisingFunder is ExercisingFunder {
             swapData
         );
         POOL_MANAGER.unlock(callbackData);
+    }
+
+    /// @dev Looks up the V3 pool by `(tokenGiven, tokenExpected, fee)` and
+    ///      executes an exact-input swap of `swapData.amountIn`. The pool
+    ///      pulls `tokenGiven` via `uniswapV3SwapCallback` and transfers the
+    ///      output to this contract. `swapData.tickSpacing` is unused on the
+    ///      V3 path (V3 derives spacing from the fee tier).
+    function _executeSwapV3(
+        address tokenGiven,
+        address tokenExpected,
+        SwapData memory swapData
+    ) internal {
+        address pool = V3_FACTORY.getPool(
+            tokenGiven,
+            tokenExpected,
+            swapData.fee
+        );
+        if (pool == address(0)) revert PoolNotFound();
+
+        bool zeroForOne = tokenGiven < tokenExpected;
+        bytes memory callbackData = abi.encode(
+            tokenGiven,
+            tokenExpected,
+            swapData.fee
+        );
+
+        // V3 exact-input uses a *positive* amountSpecified (opposite of V4).
+        (int256 amount0, int256 amount1) = IUniswapV3Pool(pool).swap(
+            address(this),
+            zeroForOne,
+            int256(swapData.amountIn),
+            zeroForOne ? MIN_SQRT_PRICE + 1 : MAX_SQRT_PRICE - 1,
+            callbackData
+        );
+
+        // Output is the negative side of the delta — it's what the pool sent
+        // us. amountIn is paid via the callback, not checked here.
+        int256 outDelta = zeroForOne ? amount1 : amount0;
+        if (outDelta >= 0) revert UnexpectedDelta();
+        uint256 amountOut = uint256(-outDelta);
+        if (amountOut < swapData.amountOutMin) revert InsufficientOutput();
+    }
+
+    /// @notice Uniswap V3 swap callback. Pays the pool whichever side of the
+    ///         delta is positive. The callback is authenticated by recomputing
+    ///         the expected pool address from the factory — only the legit
+    ///         `(tokenIn, tokenOut, fee)` pool can be the caller, because V3
+    ///         only invokes this callback on the contract that called
+    ///         `pool.swap()` (i.e. this contract during `_executeSwapV3`).
+    function uniswapV3SwapCallback(
+        int256 amount0Delta,
+        int256 amount1Delta,
+        bytes calldata data
+    ) external {
+        (address tokenIn, address tokenOut, uint24 fee) = abi.decode(
+            data,
+            (address, address, uint24)
+        );
+        address expectedPool = V3_FACTORY.getPool(tokenIn, tokenOut, fee);
+        if (msg.sender != expectedPool) revert NotV3Pool();
+
+        bool zeroForOne = tokenIn < tokenOut;
+        int256 owedDelta = zeroForOne ? amount0Delta : amount1Delta;
+        if (owedDelta <= 0) revert UnexpectedDelta();
+        IERC20(tokenIn).safeTransfer(msg.sender, uint256(owedDelta));
     }
 
     /// @notice PoolManager unlock callback. Executes an exact-input swap of
@@ -233,6 +356,11 @@ contract SwapExercisingFunder is ExercisingFunder {
 
         uint256 amountIn = uint256(uint128(-inDelta));
         uint256 amountOut = uint256(uint128(outDelta));
+        // Bind the pool's input draw to the signed amount. Without this, a
+        // hook with BEFORE_SWAP_RETURNS_DELTA / AFTER_SWAP_RETURNS_DELTA could
+        // inflate the input delta and pull more `tokenGiven` from the funder
+        // than the signer authorised.
+        if (amountIn != swapData.amountIn) revert UnexpectedDelta();
         if (amountOut < swapData.amountOutMin) revert InsufficientOutput();
 
         // Settle what we owe: sync → transfer → settle credits us the delta.
