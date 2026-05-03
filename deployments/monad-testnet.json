@@ -100,6 +100,12 @@
     "pair_btc_usdc_call_94000_20260529": "0x8aB96221Ad00f9922A6110Ed18a78032fA780185",
     "pair_btc_usdc_call_98000_20260529": "0xebD88592b317931CD8360Ee43719Be77E0858C6b"
   },
+  "token_decimals": {
+    "weth": 18,
+    "usdc": 6,
+    "btc": 8,
+    "mon": 18
+  },
   "maker_funders": {
     "maker_0": {
       "address": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
