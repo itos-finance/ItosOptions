@@ -2,20 +2,23 @@
 # MintTokens.sh — mints mock WETH and USDC to a recipient address
 #
 # Usage:
-#   cd contracts && bash script/MintTokens.sh <recipient_address>
+#   cd contracts && bash script/MintTokens.sh <recipient_address> [rpc_url]
 #
 # Prerequisites:
 #   - .env with DEPLOYER_PRIVATE_KEY and RPC_URL
 #   - cast installed (part of foundry)
+#
+# If [rpc_url] is omitted, RPC_URL from .env is used.
 
 set -euo pipefail
 
 if [ $# -lt 1 ]; then
-  echo "Usage: bash script/MintTokens.sh <recipient_address>"
+  echo "Usage: bash script/MintTokens.sh <recipient_address> [rpc_url]"
   exit 1
 fi
 
 RECIPIENT="$1"
+RPC_URL_OVERRIDE="${2:-}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
@@ -30,6 +33,10 @@ fi
 
 : "${DEPLOYER_PRIVATE_KEY:?DEPLOYER_PRIVATE_KEY not set}"
 : "${RPC_URL:?RPC_URL not set}"
+
+if [ -n "$RPC_URL_OVERRIDE" ]; then
+  RPC_URL="$RPC_URL_OVERRIDE"
+fi
 
 # Read token addresses from deployment JSON
 DEPLOY_JSON="$ROOT_DIR/deployments/monad-testnet.json"

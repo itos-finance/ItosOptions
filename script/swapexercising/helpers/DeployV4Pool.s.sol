@@ -9,7 +9,7 @@ import {IHooks} from "v4-core/src/interfaces/IHooks.sol";
 
 /// @notice Deploys a Uniswap V4 PoolManager (or reuses one) and initializes a
 ///         pool for `(RISK_TOKEN, CASH_TOKEN)`. Driven by env vars; use
-///         `bootstrap.py` for orchestration.
+///         `bootstrap_testnet.py` for orchestration.
 ///
 /// Required env:
 ///   RISK_TOKEN, CASH_TOKEN, V4_FEE, V4_TICK_SPACING, V4_SQRT_PRICE

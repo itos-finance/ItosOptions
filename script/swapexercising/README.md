@@ -1,6 +1,6 @@
 # SwapExercising scripts
 
-This folder ships a single Python orchestrator (`bootstrap.py`) plus eight
+This folder ships a single Python orchestrator (`bootstrap_testnet.py`) plus eight
 env-var-driven Forge scripts. The orchestrator pulls live addresses from
 [itos-finance.tome.center/reference/addresses](https://itos-finance.tome.center/reference/addresses),
 deploys (or reuses) shared infra — Uniswap V4 PoolManager, Uniswap V3 factory,
@@ -14,7 +14,7 @@ the funder so they can sign Quote messages off-chain.
 cd contracts
 export RPC_URL=https://testnet-rpc.monad.xyz
 export DEPLOYER_PRIVATE_KEY=0x...                         # any funded testnet key
-python3 script/swapexercising/bootstrap.py \
+python3 script/swapexercising/bootstrap_testnet.py \
     --mm 0x29c0e2fff128fFaE7c22B87938C061D0d8127fC7
 ```
 
@@ -86,11 +86,11 @@ User-facing entry points (top level):
 
 | File | Purpose |
 | --- | --- |
-| `bootstrap.py` | Python orchestrator (see above) |
+| `bootstrap_testnet.py` | Python orchestrator (see above) |
 | `ExerciseWithSwapFunder.s.sol` | Exercise an OPair via the funder (V3 or V4 routing) |
 | `README.md` | This file |
 
-Helpers invoked by `bootstrap.py` (under `helpers/`):
+Helpers invoked by `bootstrap_testnet.py` (under `helpers/`):
 
 | File | Purpose |
 | --- | --- |
@@ -103,5 +103,5 @@ Helpers invoked by `bootstrap.py` (under `helpers/`):
 | `helpers/SwapV3ToPrice.s.sol` | Push a V3 pool toward a target sqrtPrice |
 
 Each `.s.sol` documents its required/optional env vars in its header
-comment. They emit `OUT:KEY=VALUE` lines on stdout that `bootstrap.py` greps
+comment. They emit `OUT:KEY=VALUE` lines on stdout that `bootstrap_testnet.py` greps
 to thread addresses between steps.
