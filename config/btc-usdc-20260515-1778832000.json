@@ -1,5 +1,5 @@
 {
-  "description": "BTC/USDC options vaults \u2014 generated from OptMM strikes for 2026-05-15, spot $78,235.1",
+  "description": "BTC/USDC options vaults \u2014 generated from OptMM strikes for 2026-05-15, spot $78,565.7",
   "underlying_symbol": "BTC",
   "cash_symbol": "USDC",
   "risk_token": "0xc978ACdB82ad8ecAf3e4fc8B3d71e21490F9ec98",
@@ -10,11 +10,11 @@
   "expiry": 1778832000,
   "pairs": [
     {
-      "strike_usd": 66000,
+      "strike_usd": 68000,
       "is_call": false
     },
     {
-      "strike_usd": 68000,
+      "strike_usd": 70000,
       "is_call": false
     },
     {
