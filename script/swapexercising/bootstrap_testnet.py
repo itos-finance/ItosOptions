@@ -216,6 +216,25 @@ def token_balance(rpc_url: str, token: str, account: str) -> int:
     return cast_call_uint(rpc_url, token, "balanceOf(address)(uint256)", account)
 
 
+def funder_factory(rpc_url: str, funder: str) -> Optional[str]:
+    """Returns the OPair factory the deployed funder was wired to, or None
+    if the call fails (contract missing, wrong chain, etc.)."""
+    try:
+        cp = run(
+            ["cast", "call", "--rpc-url", rpc_url, funder, "factory()(address)"],
+            check=False,
+        )
+        if cp.returncode != 0:
+            return None
+        out = cp.stdout.strip()
+        if not out:
+            return None
+        # Normalise 0x-padded address (cast returns checksummed 20-byte hex).
+        return out.split()[0]
+    except Exception:
+        return None
+
+
 def cast_code(rpc_url: str, addr: str) -> str:
     """Returns the deployed bytecode at `addr`, or empty string if none."""
     out = run(["cast", "code", "--rpc-url", rpc_url, addr]).stdout.strip()
@@ -493,7 +512,21 @@ def main() -> int:
         state.setdefault("v3Initialized", []).append(label)
         save_state(args.state, state)
 
-    # 7. SwapExercisingFunder (deploy once)
+    # 7. SwapExercisingFunder (deploy once, redeploy if the OPair factory drifted)
+    if "swapFunder" in state:
+        cached = state["swapFunder"]
+        on_chain_factory = funder_factory(args.rpc_url, cached)
+        if on_chain_factory is None:
+            print(f"== cached funder {cached} did not respond — redeploying")
+            state.pop("swapFunder", None)
+            save_state(args.state, state)
+        elif on_chain_factory.lower() != factory.lower():
+            print(
+                f"== cached funder {cached} wired to OPair factory "
+                f"{on_chain_factory}, but page reports {factory} — redeploying"
+            )
+            state.pop("swapFunder", None)
+            save_state(args.state, state)
     if "swapFunder" not in state:
         outs = run_forge(
             "script/swapexercising/helpers/DeploySwapExercisingFunder.s.sol",
