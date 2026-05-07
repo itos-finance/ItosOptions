@@ -1,18 +1,14 @@
 {
-  "description": "BTC/USDC options vaults \u2014 generated from OptMM strikes for 2026-05-29, spot $78,565.7",
+  "description": "BTC/USDC options vaults \u2014 generated from OptMM strikes for 2026-05-29, spot $80,933.1",
   "underlying_symbol": "BTC",
   "cash_symbol": "USDC",
-  "risk_token": "0xc978ACdB82ad8ecAf3e4fc8B3d71e21490F9ec98",
-  "cash_token": "0x5B8477CB67b8A4FF8Df7A83f0Be57a6Cd82d5196",
+  "risk_token": "0x0555E30da8f98308EdB960aa94C0Db47230d2B9c",
+  "cash_token": "0x754704Bc059F8C67012fEd69BC8A327a5aafb603",
   "risk_decimals": 8,
   "cash_decimals": 6,
   "min_deposit_size": "1000000",
   "expiry": 1780041600,
   "pairs": [
-    {
-      "strike_usd": 64000,
-      "is_call": false
-    },
     {
       "strike_usd": 66000,
       "is_call": false
@@ -22,23 +18,27 @@
       "is_call": false
     },
     {
-      "strike_usd": 74000,
+      "strike_usd": 72000,
       "is_call": false
     },
     {
-      "strike_usd": 84000,
+      "strike_usd": 76000,
+      "is_call": false
+    },
+    {
+      "strike_usd": 86000,
       "is_call": true
     },
     {
-      "strike_usd": 88000,
+      "strike_usd": 90000,
       "is_call": true
     },
     {
-      "strike_usd": 92000,
+      "strike_usd": 94000,
       "is_call": true
     },
     {
-      "strike_usd": 98000,
+      "strike_usd": 100000,
       "is_call": true
     }
   ]

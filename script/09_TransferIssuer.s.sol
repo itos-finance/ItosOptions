@@ -18,8 +18,9 @@ import {OPairFactory} from "../src/OPairFactory.sol";
 /// Usage:
 ///   cd contracts
 ///   forge script script/09_TransferIssuer.s.sol \
-///     --rpc-url $MONAD_MAINNET_RPC \
-///     --private-key $DEPLOYER_PRIVATE_KEY \
+///     --rpc-url $RPC_URL_143 \
+///     --account $DEPLOYER_KEYSTORE \
+///     --sender $DEPLOYER_PUBLIC_KEY \
 ///     --broadcast
 contract TransferIssuer is Script {
     /// Monad mainnet chain id. The script refuses to broadcast on any

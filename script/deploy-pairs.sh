@@ -20,7 +20,15 @@
 #   deployment-json contracts/deployments/monad-testnet.json
 #
 # Prerequisites:
-#   - .env with DEPLOYER_PRIVATE_KEY and RPC_URL
+#   - RPC_URL set in .env or shell.
+#   - ISSUER_PUBLIC_KEY set to the address holding factory ISSUER_ROLE
+#     (the broadcaster of createPair). Distinct from DEPLOYER_PUBLIC_KEY,
+#     which after the role migration no longer holds any factory role.
+#   - Signer for ISSUER_PUBLIC_KEY: either
+#       (a) ISSUER_KEYSTORE — Foundry keystore name (import via
+#           `cast wallet import <name> --interactive`), or
+#       (b) TREZOR_PATH — BIP32 derivation path for hardware signing,
+#           e.g. "m/44'/60'/0'/0/0". Takes precedence if set.
 #   - jq installed
 #   - forge installed and contracts compiled
 
@@ -55,8 +63,12 @@ DEPLOY_JSON="$(cd "$(dirname "$DEPLOY_JSON")" && pwd)/$(basename "$DEPLOY_JSON")
 if [ -f .env ]; then
   set -a; source .env; set +a
 fi
-: "${DEPLOYER_PRIVATE_KEY:?DEPLOYER_PRIVATE_KEY not set}"
+: "${ISSUER_PUBLIC_KEY:?ISSUER_PUBLIC_KEY not set (factory ISSUER_ROLE holder)}"
 : "${RPC_URL:?RPC_URL not set}"
+if [ -z "${TREZOR_PATH:-}" ] && [ -z "${ISSUER_KEYSTORE:-}" ]; then
+  echo "Error: set TREZOR_PATH (e.g. \"m/44'/60'/0'/0/0\") or ISSUER_KEYSTORE" >&2
+  exit 1
+fi
 
 # ── Read config ────────────────────────────────────────────────────────────────
 
@@ -109,7 +121,11 @@ EXPIRY_DATE=$(date -u -r "$EXPIRY_TS" +%Y%m%d 2>/dev/null \
   || date -u -d "@$EXPIRY_TS" +%Y%m%d 2>/dev/null \
   || echo "UNKNOWN")
 
-FORGE_OPTS="--rpc-url $RPC_URL --private-key $DEPLOYER_PRIVATE_KEY --broadcast"
+if [ -n "${TREZOR_PATH:-}" ]; then
+  FORGE_OPTS="--rpc-url $RPC_URL --trezor --mnemonic-derivation-paths $TREZOR_PATH --sender $ISSUER_PUBLIC_KEY --broadcast"
+else
+  FORGE_OPTS="--rpc-url $RPC_URL --account $ISSUER_KEYSTORE --sender $ISSUER_PUBLIC_KEY --broadcast"
+fi
 
 echo "=================================================="
 echo " deploy-pairs: $CONFIG_FILE"

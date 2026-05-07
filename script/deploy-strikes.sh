@@ -18,7 +18,10 @@
 # Usage:
 #   cd contracts
 #   export RPC_URL=https://rpc.monad.xyz         # or testnet RPC
-#   export DEPLOYER_PRIVATE_KEY=0x...             # factory issuer
+#   export ISSUER_PUBLIC_KEY=0x...                # factory ISSUER_ROLE holder
+#   # Then EITHER:
+#   export ISSUER_KEYSTORE=<foundry-keystore-name>  # OR
+#   export TREZOR_PATH="m/44'/60'/0'/0/0"         # Trezor derivation path
 #   bash script/deploy-strikes.sh \
 #     config/weth-usdc-20260508-pairs.json \
 #     config/btc-usdc-20260508-pairs.json \
@@ -44,7 +47,11 @@ if [ -f .env ]; then
   set -a; source .env; set +a
 fi
 : "${RPC_URL:?RPC_URL not set}"
-: "${DEPLOYER_PRIVATE_KEY:?DEPLOYER_PRIVATE_KEY not set}"
+: "${ISSUER_PUBLIC_KEY:?ISSUER_PUBLIC_KEY not set (factory ISSUER_ROLE holder)}"
+if [ -z "${TREZOR_PATH:-}" ] && [ -z "${ISSUER_KEYSTORE:-}" ]; then
+  echo "Error: set TREZOR_PATH (e.g. \"m/44'/60'/0'/0/0\") or ISSUER_KEYSTORE" >&2
+  exit 1
+fi
 
 # ── Resolve absolute config paths + sanity-check existence ────────────────
 CONFIGS=()
