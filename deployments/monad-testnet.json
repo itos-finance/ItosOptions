@@ -114,19 +114,19 @@
   "maker_funders": {
     "maker_0": {
       "address": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
-      "funder": "0xbbc54CdC2fCed0b6c6877189F2f1416AB50F8BAd"
+      "funder": "0xAE9342aF475fceB3A5E23Ae1022D1c7Ca9F0E5A2"
     },
     "maker_1": {
       "address": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
-      "funder": "0xEE0149a57ad051166FEc7892E3D53036824DAdA8"
+      "funder": "0xf728Dcee110aa08E23C5B3449e7e65B51DB0147b"
     },
     "maker_2": {
       "address": "0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65",
-      "funder": "0xF95Ba1a23058D5df51F0f7264a6c03ffB87983BA"
+      "funder": "0xBAa6880400D5C570c8Af9C79158C95f9E085FeF2"
     },
     "maker_3": {
       "address": "0x50699201eCF64f46D0038CB471ACA9ABA3742B76",
-      "funder": "0x314ab529b0530DE534e47c30ef4781ef6bedA45f"
+      "funder": "0x0f5e15Fd04F666ca51E9De22b02A69eA1662e0f7"
     }
   }
 }
